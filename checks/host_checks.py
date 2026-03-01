@@ -14,6 +14,7 @@ from typing import Optional
 
 from sec_audit.results import CheckResult, Status, Severity
 from scanners.ssh_scanner import SSHScanner
+from sec_audit.results import ScanResult
 from sec_audit.config import CHECKS
 
 
@@ -26,7 +27,7 @@ def _meta(check_id: str):
 
 # ==================== 6 REAL CHECKS ====================
 def check_ssh_hardening(ssh_host: Optional[str] = None, ssh_user: Optional[str] = None, 
-                       ssh_key: Optional[str] = None, ssh_password: Optional[str] = None, verbose: bool = False) -> CheckResult:
+                       ssh_key: Optional[str] = None, ssh_password: Optional[str] = None, scan_result: Optional[ScanResult] = None, verbose: bool = False) -> CheckResult:
     """HOST-SSH-001: SSH PermitRootLogin disabled."""
     meta = _meta("HOST-SSH-001")
     
@@ -41,6 +42,13 @@ def check_ssh_hardening(ssh_host: Optional[str] = None, ssh_user: Optional[str] 
     scanner = SSHScanner(host=ssh_host, user=ssh_user, key_path=ssh_key, password=ssh_password, verbose=verbose)
     try:
         scanner.connect()
+        
+        # Detect OS version once per scan (if ScanResult provided)
+        if scan_result is not None:
+            os_name = scanner.detect_os_version()
+            if os_name:
+                scan_result._os_version = os_name
+                
         output, _ = scanner.run_command("grep -i '^PermitRootLogin' /etc/ssh/sshd_config || echo 'no'", verbose=verbose)
         scanner.close()
         

@@ -13,13 +13,16 @@ from typing import Optional
 from pathlib import Path
 from docker.models.containers import Container
 
+from sec_audit.results import ScanResult
+
 
 class DockerScanner:
     """ This is a class that handle the docker scanner"""
-    def __init__(self, docker_host: Optional[str] = None, verbose: bool = False):
+    def __init__(self, docker_host: Optional[str] = None, verbose: bool = False, scan_result: Optional[ScanResult] = None):
         self.docker_host = docker_host
         self.verbose = verbose
         self.client = None
+        self.scan_result = scan_result
     
     
     def connect(self) -> docker.DockerClient:
@@ -29,9 +32,22 @@ class DockerScanner:
         
         try:
             self.client = docker.DockerClient(base_url=self.docker_host) if self.docker_host else docker.from_env()
+            
+            # Detect Docker version (only if scan_result provided)
+            if self.scan_result is not None:
+                try:
+                    version_info = self.client.version()
+                    self.scan_result._docker_version = version_info.get("Version", "unknown")
+                    if self.verbose:
+                        print(f"[DEBUG] Docker version detected: {self.scan_result._docker_version}")
+                except Exception:
+                    if self.verbose:
+                        print("[DEBUG] Could not detect Docker version")
+                        
             if self.verbose:
                 info = self.client.version()
                 print(f"[DEBUG] Docker: connected, server_version={info.get('Version')!r}")
+                
             return self.client
         except Exception as exc:
             if self.verbose:

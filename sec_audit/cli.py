@@ -44,8 +44,10 @@ from checks.container_checks import (
     check_non_root_user,
     check_resource_limits,
     check_compose_resource_limits,
+    check_dockerfile_user,
     check_dockerfile_healthcheck,
-    check_dockerfile_user
+    check_dockerfile_best_practices,
+    check_compose_ports
 )
 from checks.host_checks import (
     check_ssh_hardening,
@@ -219,11 +221,17 @@ def run_from_args(args: SimpleNamespace) -> None:
         print("[INFO] config.py not yet implemented.")
     print()
     
+    # ───────── CREATE SCANRESULT FIRST ─────────
+    scan_result = ScanResult(target=args.target, mode=args.mode, checks=[])
+    
     # ───────── CREATE SCANNER ─────────
     if args.verbose:
         vprint(args.verbose, f"Creating HttpScanner for target {args.target!r}")
-    http_scanner = HttpScanner(args.target)
+    http_scanner = HttpScanner(args.target, timeout=10, scan_result=scan_result)
     results: list[CheckResult] = []
+    
+    # ───────── CREATE SCANRESULT ─────────
+    scan_result = ScanResult( target=args.target, mode=args.mode, checks=results)
     
     # ───────── WEB APP LAYER (6 checks) ─────────
     if args.mode in ["quick", "full"]:
@@ -273,7 +281,7 @@ def run_from_args(args: SimpleNamespace) -> None:
             vprint(args.verbose, "Starting HOST checks checks...")
         print("⏳ Host checks pending SSH connection...")
         results.extend([
-            check_ssh_hardening(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose),
+            check_ssh_hardening(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, scan_result=scan_result, verbose=args.verbose),
             check_firewall(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose),
             check_services(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose),
             check_auto_updates(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose),
@@ -291,6 +299,8 @@ def run_from_args(args: SimpleNamespace) -> None:
         if args.verbose:
             vprint(args.verbose, "Starting Webserver layer extra config check...")
         results.append(check_nginx_hsts_config(args.nginx_conf, verbose=args.verbose))
+        results.append(check_nginx_csp_config(args.nginx_conf, verbose=args.verbose))
+        
         
     # Container layer extra config checks
     if args.dockerfile:
@@ -298,22 +308,14 @@ def run_from_args(args: SimpleNamespace) -> None:
             vprint(args.verbose, "Starting Container layer extra config checks...")
         results.append(check_dockerfile_user(args.dockerfile, verbose=args.verbose))
         results.append(check_dockerfile_healthcheck(args.dockerfile, verbose=args.verbose))
+        results.append(check_dockerfile_best_practices(args.dockerfile, verbose=args.verbose))
         
     if args.compose_file:
         if args.verbose:
             vprint(args.verbose, "Starting compose_file config checks...")
         results.append(check_compose_resource_limits(args.compose_file, verbose=args.verbose))
+        results.append(check_compose_ports(args.compose_file, verbose=args.verbose))
 
-    
-    # ───────── CREATE SCANRESULT ─────────
-    scan_result = ScanResult( target=args.target, mode=args.mode, checks=results)
-    
-    # # ───────── DISPLAY RESULTS ─────────
-    # print("🔎 ALL CHECK RESULTS:")
-    # for r in scan_result.checks:
-    #     print(f"  [{r.status:5}] {r.id} - {r.name} ({r.severity})")
-    #     print(f"        {r.details}")
-    # print()
     
     # ───────── SCORING ─────────
     print("📊 OVERALL SCORE:")

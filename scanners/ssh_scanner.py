@@ -63,6 +63,20 @@ class SSHScanner:
             print(f"[DEBUG] SSH: {len(output)} chars, exit={exit_code}")
         return output, exit_code
     
+    def detect_os_version(self) -> str:
+        """Detect host OS version."""
+        try:
+            output, _ = self.run_command(
+                "lsb_release -ds 2>/dev/null || "
+                "grep '^PRETTY_NAME=' /etc/os-release | cut -d'=' -f2 | tr -d '\"' || "
+                "grep '^NAME=' /etc/os-release | cut -d'=' -f2 | tr -d '\"'",
+                verbose=self.verbose
+            )
+            os_name = output.strip()
+            return os_name if os_name else "Unknown Linux"
+        except:
+            return "Unknown OS"
+    
     def close(self):
         if self.client:
             self.client.close()

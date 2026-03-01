@@ -332,16 +332,53 @@ def generate_pdf(scan_result: ScanResult, output_path: str) -> None:
         ("FONTSIZE", (0, 1), (-1, -1), 9),
     ]
 
+    _hm_cell = ParagraphStyle("hm_cell", fontName="Helvetica", fontSize=9,
+                              textColor=TEXT_DARK, alignment=TA_CENTER, leading=12, wordWrap="CJK")
+    _hm_pill = ParagraphStyle("hm_pill", fontName="Helvetica-Bold", fontSize=8,
+                              textColor=colors.white, alignment=TA_CENTER, leading=11)
+
+    # Map the raw color string from layer_summary() to palette colors + label
+    STATUS_MAP = {
+        # Plain string variants
+        "green":  (PASS_GREEN, "PASS"),
+        "amber":  (WARN_AMBER, "WARN"),
+        "orange": (WARN_AMBER, "WARN"),
+        "red":    (FAIL_RED,   "FAIL"),
+        "grey":   (STEEL,      "N/A"),
+        "gray":   (STEEL,      "N/A"),
+        # Emoji variants (from layer_summary() in results.py)
+        "🟢":     (PASS_GREEN, "PASS"),
+        "🟡":     (WARN_AMBER, "WARN"),
+        "🔴":     (FAIL_RED,   "FAIL"),
+    }
+
     for i, layer in enumerate(layers_order, 1):
         if layer in layer_data:
             stats = layer_data[layer]
-            risk = stats.get("risk", "")
+            risk       = stats.get("risk", "")
+            raw_color  = str(stats.get("color", "")).lower().strip()
+            pill_color, pill_label = STATUS_MAP.get(raw_color, (STEEL, raw_color.upper() or "—"))
             bg = _risk_bg(risk)
+
+            # Status pill
+            status_pill = Table(
+                [[Paragraph(pill_label, _hm_pill)]],
+                colWidths=[28*mm],
+            )
+            status_pill.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), pill_color),
+                ("TOPPADDING",   (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+
             heatmap_rows.append([
-                layer_labels.get(layer, layer),
-                f"{stats['pass_rate']}%  ({stats['passed']}/{stats['total']})",
-                stats.get("color", ""),
-                risk,
+                Paragraph(layer_labels.get(layer, layer), _hm_cell),
+                Paragraph(f"{stats['pass_rate']}%  ({stats['passed']}/{stats['total']})", _hm_cell),
+                status_pill,
+                Paragraph(str(risk), _hm_cell),
             ])
             heatmap_style.append(("BACKGROUND", (0, i), (-1, i), bg))
 
@@ -349,12 +386,189 @@ def generate_pdf(scan_result: ScanResult, output_path: str) -> None:
     heatmap_table.setStyle(TableStyle(heatmap_style))
     story.append(heatmap_table)
     story.append(Spacer(1, 14))
+
     
     # ── TOP 5 PRIORITY FIXES ────────────────────────────────────────────────────
-    story.extend(_section("Priority Fixes", styles))
-    priority_html = scan_result.priority_fixes()
-    priority_para = Paragraph(priority_html, styles["body"])
-    story.append(priority_para)
+    story.extend(_section("Top 5 Priority Fixes", styles))
+
+    fix_label_style = ParagraphStyle(
+        "fix_label", fontName="Helvetica-Bold", fontSize=7,
+        textColor=colors.white, alignment=TA_CENTER, leading=9,
+    )
+    fix_id_style = ParagraphStyle(
+        "fix_id", fontName="Helvetica-Bold", fontSize=8,
+        textColor=NAVY, leading=11, wordWrap="CJK",
+    )
+    fix_title_style = ParagraphStyle(
+        "fix_title", fontName="Helvetica-Bold", fontSize=9,
+        textColor=TEXT_DARK, leading=12, wordWrap="CJK",
+    )
+    fix_detail_style = ParagraphStyle(
+        "fix_detail", fontName="Helvetica", fontSize=8,
+        textColor=TEXT_MUTED, leading=11, wordWrap="CJK",
+    )
+    fix_tag_style = ParagraphStyle(
+        "fix_tag", fontName="Helvetica-Bold", fontSize=7,
+        textColor=colors.white, alignment=TA_CENTER, leading=10,
+    )
+
+    priority_fixes = scan_result.priority_fixes()
+
+    if priority_fixes:
+        SEVERITY_COLORS = {
+            "CRITICAL": colors.HexColor("#B71C1C"),
+            "HIGH":     FAIL_RED,
+            "MEDIUM":   WARN_AMBER,
+            "LOW":      PASS_GREEN,
+            "INFO":     STEEL,
+        }
+        SEVERITY_BG = {
+            "CRITICAL": colors.HexColor("#FFCDD2"),
+            "HIGH":     LIGHT_RED,
+            "MEDIUM":   LIGHT_AMBER,
+            "LOW":      LIGHT_GREEN,
+            "INFO":     colors.HexColor("#E3F2FD"),
+        }
+
+        # Header row
+        hdr_s = ParagraphStyle("fhdr", fontName="Helvetica-Bold", fontSize=8, textColor=colors.white, alignment=TA_CENTER)
+        fix_header = Table(
+            [[
+                Paragraph("#",        hdr_s),
+                Paragraph("Check ID", hdr_s),
+                Paragraph("Fix",      hdr_s),
+                Paragraph("Severity / Status", hdr_s),
+                Paragraph("Layer",    hdr_s),
+            ]],
+            colWidths=[10*mm, 32*mm, 90*mm, 22*mm, 22*mm],
+        )
+        fix_header.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, -1), NAVY),
+            ("TOPPADDING",   (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 7),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(fix_header)
+
+        # Handle both list-of-dicts and raw HTML/string fallback
+        if isinstance(priority_fixes, list):
+            fixes_iter = priority_fixes
+        else:
+            # Raw string fallback — display in a single styled callout
+            fixes_iter = []
+            fallback_card = Table(
+                [[Paragraph(str(priority_fixes), fix_detail_style)]],
+                colWidths=[PAGE_W - 2*MARGIN],
+            )
+            fallback_card.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), ROW_ALT),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING",   (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
+                ("BOX",          (0, 0), (-1, -1), 0.5, RULE_GREY),
+            ]))
+            story.append(fallback_card)
+
+        for idx, fix in enumerate(fixes_iter[:5], 1):
+            severity  = str(fix.get("severity", "HIGH")).upper()
+            sev_color = SEVERITY_COLORS.get(severity, STEEL)
+            sev_bg    = SEVERITY_BG.get(severity, ROW_ALT)
+            row_bg    = sev_bg if idx % 2 != 0 else colors.white
+
+            # Numbered badge cell
+            badge_cell = Table(
+                [[Paragraph(str(idx), fix_label_style)]],
+                colWidths=[10*mm],
+            )
+            badge_cell.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), sev_color),
+                ("TOPPADDING",   (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+
+            # Status pill — FAIL=red, WARN=amber
+            status       = str(fix.get("status", "FAIL")).upper()
+            status_color = FAIL_RED if status == "FAIL" else WARN_AMBER if status == "WARN" else STEEL
+            status_pill  = Table(
+                [[Paragraph(status, fix_tag_style)]],
+                colWidths=[22*mm],
+            )
+            status_pill.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), status_color),
+                ("TOPPADDING",   (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+
+            # Severity pill — stacked above status pill in same cell
+            sev_pill = Table(
+                [[Paragraph(severity, fix_tag_style)]],
+                colWidths=[22*mm],
+            )
+            sev_pill.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), sev_color),
+                ("TOPPADDING",   (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+
+            # Combined pill cell: severity on top, status below
+            pill_cell = Table(
+                [[sev_pill], [Spacer(1, 2)], [status_pill]],
+                colWidths=[22*mm],
+            )
+            pill_cell.setStyle(TableStyle([
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING",   (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+            ]))
+
+            fix_row = Table(
+                [[
+                    badge_cell,
+                    Paragraph(str(fix.get("id", "")), fix_id_style),
+                    Table(
+                        [
+                            [Paragraph(str(fix.get("name", fix.get("title", "—"))), fix_title_style)],
+                            [Paragraph(str(fix.get("details", fix.get("description", ""))), fix_detail_style)],
+                        ],
+                        colWidths=[90*mm],
+                    ),
+                    pill_cell,
+                    Paragraph(str(fix.get("layer", "—")), fix_detail_style),
+                ]],
+                colWidths=[10*mm, 32*mm, 90*mm, 22*mm, 22*mm],
+            )
+            fix_row.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), row_bg),
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",   (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("LINEBELOW",    (0, 0), (-1, 0), 0.5, RULE_GREY),
+                ("LINEBEFORE",   (0, 0), (0, 0), 3, sev_color),
+            ]))
+            story.append(fix_row)
+
+    else:
+        story.append(Paragraph(
+            "No priority fixes identified. System is within acceptable security parameters.",
+            ParagraphStyle("no_fix", fontName="Helvetica", fontSize=9, textColor=PASS_GREEN, leading=13),
+        ))
+
     story.append(Spacer(1, 14))
 
     # ── CONFIGURATION DRIFT ───────────────────────────────────────────────────

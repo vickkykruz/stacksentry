@@ -394,6 +394,39 @@ def check_dockerfile_user(path: Optional[str] = None, verbose: bool = False) -> 
 
 
 
+def check_dockerfile_healthcheck(path: Optional[str] = None, verbose: bool = False) -> CheckResult:
+    """
+    CONT-CONF-HEALTH: Dockerfile defines HEALTHCHECK.
+    """
+    meta = _meta("CONT-CONF-HEALTH")
+
+    if not path:
+        if verbose:
+            print("[DEBUG] CONT-CONF-HEALTH: Dockerfile path not provided; cannot statically verify HEALTHCHECK.")
+        status = Status.WARN
+        details = "Dockerfile path not provided; cannot statically verify HEALTHCHECK."
+        
+
+    try:
+        scanner = DockerfileScanner(path, verbose)
+        if scanner.has_healthcheck():
+            status = Status.PASS
+            details = "Dockerfile defines a HEALTHCHECK instruction."
+        else:
+            status = Status.WARN
+            details = "No HEALTHCHECK in Dockerfile; add one for better container monitoring."
+    except Exception as e:
+        if verbose:
+            print(f"[DEBUG] CONT-CONF-HEALTH: exception {e!r}")
+        status = Status.WARN
+        details = f"Error parsing Dockerfile: {e}"
+
+    return CheckResult(
+        id=meta["id"], layer=meta["layer"], name=meta["name"],
+        status=status, severity=Severity[meta["severity"]], details=details,
+    )
+
+
 def check_dockerfile_best_practices(path: Optional[str] = None, verbose: bool = False) -> CheckResult:
     meta = _meta("CT-CONF-DOCKERFILE")
 
