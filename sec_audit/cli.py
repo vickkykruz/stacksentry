@@ -206,7 +206,8 @@ def run_from_args(args: SimpleNamespace) -> None:
         print(f"  🔧 Verbose: enabled")
     print()
     
-    # Day 2 Integration Test
+    
+    # Layer totals from config
     try:
         if args.verbose:
             vprint(args.verbose, "Importing get_layer_totals() from sec_audit.config...")
@@ -225,19 +226,20 @@ def run_from_args(args: SimpleNamespace) -> None:
     print()
     
     # ───────── CREATE SCANRESULT FIRST ─────────
-    scan_result = ScanResult(target=args.target, mode=args.mode, checks=[])
+    results: list[CheckResult] = []
+    scan_result = ScanResult(target=args.target, mode=args.mode, checks=results)
     
     # ───────── CREATE SCANNER ─────────
     if args.verbose:
         vprint(args.verbose, f"Creating HttpScanner for target {args.target!r}")
     http_scanner = HttpScanner(args.target, timeout=10, scan_result=scan_result)
-    results: list[CheckResult] = []
     
-    # ───────── CREATE SCANRESULT ─────────
-    scan_result = ScanResult( target=args.target, mode=args.mode, checks=results)
+    # ───────── MODE FLAGS ─────────
+    quick_mode = args.mode == "quick"
+    full_mode = args.mode == "full"
     
-    # ───────── WEB APP LAYER (6 checks) ─────────
-    if args.mode in ["quick", "full"]:
+    # ───────── WEB APP LAYER (always in quick/full) ─────────
+    if quick_mode or full_mode:
         if args.verbose:
             vprint(args.verbose, "Starting Web App Layer checks...")
         print("🔎 Running Web Application checks...")
@@ -250,8 +252,8 @@ def run_from_args(args: SimpleNamespace) -> None:
             check_password_policy(http_scanner, verbose=args.verbose),
         ])
     
-    # ───────── WEB SERVER LAYER (6 checks) ─────────  
-    if args.mode in ["quick", "full"]:
+    # ───────── WEB SERVER LAYER (always in quick/full) ─────────
+    if quick_mode or full_mode:
         if args.verbose:
             vprint(args.verbose, "Starting Web Server checks...")
         print("🔎 Running Web Server checks...")
@@ -264,8 +266,8 @@ def run_from_args(args: SimpleNamespace) -> None:
             check_request_limits(http_scanner, verbose=args.verbose),
         ])
     
-    # ───────── CONTAINER LAYER (6 checks) ─────────
-    if args.mode == "full":
+    # ───────── CONTAINER LAYER: RUNTIME (only full + docker_host) ─────────
+    if full_mode and args.docker_host:
         if args.verbose:
             vprint(args.verbose, "Starting Container checks checks...")
         print("⏳ Container checks pending Docker connection...")
@@ -277,9 +279,13 @@ def run_from_args(args: SimpleNamespace) -> None:
             check_image_registry(args.docker_host, verbose=args.verbose),
             check_no_secrets(args.docker_host, verbose=args.verbose),
         ])
+    elif full_mode and not args.docker_host and args.verbose:
+        vprint(args.verbose, "[INFO] Skipping container runtime checks (no --docker-host provided)")
     
-    # ───────── HOST LAYER (6 checks) ─────────
-    if args.mode == "full":
+    # ───────── HOST LAYER: SSH (only full + SSH params) ─────────
+    have_ssh = bool(args.ssh_host and args.ssh_user and (args.ssh_key or args.ssh_password))
+    
+    if full_mode and have_ssh:
         if args.verbose:
             vprint(args.verbose, "Starting HOST checks checks...")
         print("⏳ Host checks pending SSH connection...")
@@ -295,9 +301,11 @@ def run_from_args(args: SimpleNamespace) -> None:
             check_mysql_user(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose),
             check_redis_user(args.ssh_host, args.ssh_user, args.ssh_key, args.ssh_password, verbose=args.verbose)
         ])
+    elif full_mode and not have_ssh and args.verbose:
+        vprint(args.verbose, "[INFO] Skipping host layer checks (SSH parameters missing)")
         
-    #  ───────── ADDITION CHECKS ─────────
-    # Webserver layer extra config check
+    # ───────── ADDITIONAL CONFIG CHECKS (independent of mode) ─────────
+    # Webserver extra config (nginx.conf)
     if args.nginx_conf:
         if args.verbose:
             vprint(args.verbose, "Starting Webserver layer extra config check...")
@@ -313,12 +321,15 @@ def run_from_args(args: SimpleNamespace) -> None:
         results.append(check_dockerfile_healthcheck(args.dockerfile, verbose=args.verbose))
         results.append(check_dockerfile_best_practices(args.dockerfile, verbose=args.verbose))
         
+    # Container extra config: docker-compose.yml
     if args.compose_file:
         if args.verbose:
             vprint(args.verbose, "Starting compose_file config checks...")
         results.append(check_compose_resource_limits(args.compose_file, verbose=args.verbose))
         results.append(check_compose_ports(args.compose_file, verbose=args.verbose))
 
+    # Attach final results
+    scan_result.checks = results
     
     # ───────── SCORING ─────────
     print("📊 OVERALL SCORE:")
