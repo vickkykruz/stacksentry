@@ -21,6 +21,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
 from sec_audit.results import ScanResult
+from sec_audit.planner import build_hardening_plan
+from sec_audit.narratives import generate_owasp_narrative
 from sec_audit.baseline import HARDENED_FLASK_BASELINE
 from typing import List
 import datetime
@@ -209,7 +211,7 @@ def _grade_badge(scan_result: ScanResult, styles) -> Table:
 
 
 # ── Main generate function ────────────────────────────────────────────────────
-def generate_pdf(scan_result: ScanResult, output_path: str) -> None:
+def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "generic") -> None:
     """
     Generate a professional PDF security audit report from ScanResult.
 
@@ -571,6 +573,88 @@ def generate_pdf(scan_result: ScanResult, output_path: str) -> None:
 
     story.append(Spacer(1, 14))
     
+    # ── PRIORITISED HARDENING PLAN ────────────────────────────────────────────
+    story.extend(_section("Prioritised Hardening Plan (Day 1 / Day 7 / Day 30)", styles))
+
+    # Get plan items: either via planner module or ScanResult method
+    try:
+        plan_items = build_hardening_plan(scan_result)  # if using planner.py
+        # plan_items = scan_result.hardening_plan()     # if using method on ScanResult
+    except Exception:
+        plan_items = []
+
+    if not plan_items:
+        story.append(
+            Paragraph(
+                "No outstanding issues requiring a hardening plan. All checks are passing.",
+                styles["body"],
+            )
+        )
+        story.append(Spacer(1, 14))
+    else:
+        # Limit to e.g. top 12 entries to keep table readable
+        plan_subset = plan_items[:12]
+
+        # Header row
+        hp_hdr_style = ParagraphStyle(
+            "hp_hdr", fontName="Helvetica-Bold", fontSize=8,
+            textColor=colors.white, alignment=TA_CENTER,
+        )
+        hp_cell = ParagraphStyle(
+            "hp_cell", fontName="Helvetica", fontSize=8,
+            textColor=TEXT_DARK, leading=11, wordWrap="CJK",
+        )
+
+        hp_rows = [[
+            Paragraph("Bucket", hp_hdr_style),
+            Paragraph("Check ID", hp_hdr_style),
+            Paragraph("Layer", hp_hdr_style),
+            Paragraph("Severity", hp_hdr_style),
+            Paragraph("Priority", hp_hdr_style),
+            Paragraph("Recommended Fix", hp_hdr_style),
+        ]]
+
+        hp_styles = [
+            ("BACKGROUND", (0, 0), (-1, 0), STEEL),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, RULE_GREY),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ]
+
+        for idx, item in enumerate(plan_subset, 1):
+            bucket_label = {
+                "DAY_1": "Day 1 (Immediate)",
+                "DAY_7": "Day 7 (Short-term)",
+                "DAY_30": "Day 30 (Medium-term)",
+            }.get(item.get("bucket", ""), item.get("bucket", ""))
+
+            # Alternate row backgrounds
+            if idx % 2 == 0:
+                hp_styles.append(("BACKGROUND", (0, idx), (-1, idx), ROW_ALT))
+
+            hp_rows.append([
+                Paragraph(bucket_label, hp_cell),
+                Paragraph(item["id"], hp_cell),
+                Paragraph(item["layer"], hp_cell),
+                Paragraph(item["severity"], hp_cell),
+                Paragraph(str(item["priority_score"]), hp_cell),
+                Paragraph(item["recommendation"] or "-", hp_cell),
+            ])
+
+        hp_table = Table(
+            hp_rows,
+            colWidths=[30*mm, 25*mm, 20*mm, 22*mm, 20*mm, PAGE_W - 2*MARGIN - 117*mm],
+            repeatRows=1,
+        )
+        hp_table.setStyle(TableStyle(hp_styles))
+        story.append(hp_table)
+        story.append(Spacer(1, 14))
+    
     # ── OWASP TOP 5 RISK SUMMARY
     story.extend(_section("OWASP Top 5 Risk Summary (2025)", styles))
 
@@ -649,7 +733,89 @@ def generate_pdf(scan_result: ScanResult, output_path: str) -> None:
     owasp_table = Table(owasp_rows, colWidths=[100*mm, 32*mm, 25*mm])
     owasp_table.setStyle(TableStyle(owasp_row_styles))
     story.append(owasp_table)
+    story.append(Spacer(1, 10))
+    
+    # ── OWASP CONTEXTUAL NARRATIVE ───────────────────────────────────────────
+    owasp_narrative = generate_owasp_narrative(scan_result, profile)
+
+    narrative_style = ParagraphStyle(
+        "owasp_narr",
+        fontName="Helvetica",
+        fontSize=9,
+        textColor=TEXT_DARK,
+        leading=14,
+        wordWrap="CJK",
+    )
+
+    owasp_narr_card = Table(
+        [[Paragraph(owasp_narrative, narrative_style)]],
+        colWidths=[PAGE_W - 2 * MARGIN],
+    )
+    owasp_narr_card.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E8EAF6")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, colors.HexColor("#5C6BC0")),
+        ("BOX", (0, 0), (-1, -1), 0.5, RULE_GREY),
+    ]))
+    story.append(owasp_narr_card)
     story.append(Spacer(1, 14))
+
+    
+    # ── 30-DAY HARDENING ROADMAP SIMULATION ─────────────────────────────────────
+    story.extend(_section("30-Day Hardening Roadmap Simulation", styles))
+
+    day1_items = [i for i in plan_items if i.get("bucket") == "DAY_1"]
+    day7_items = [i for i in plan_items if i.get("bucket") == "DAY_7"]
+    day30_items = [i for i in plan_items if i.get("bucket") == "DAY_30"]
+
+    # Run simulations
+    sim_day1 = scan_result.simulate_with_fixes([i["id"] for i in day1_items]) if day1_items else None
+    sim_day7 = scan_result.simulate_with_fixes([i["id"] for i in day1_items + day7_items]) if day1_items or day7_items else None
+    sim_day30 = scan_result.simulate_with_fixes([i["id"] for i in plan_items]) if plan_items else None
+
+    # Build comprehensive table
+    sim_data = [
+        ["Phase", "Fixes", "Grade", "Score", "Attack Paths"],
+        ["Current", "0", scan_result.grade.value, f"{scan_result.score_percentage}%", str(scan_result.attack_path_count)],
+    ]
+
+    if day1_items:
+        sim_data.append(["Day 1", f"{len(day1_items)}", sim_day1["simulated_grade"], f"{sim_day1['simulated_score_percentage']}%", str(sim_day1["simulated_attack_path_count"])])
+
+    if day7_items and sim_day7:
+        sim_data.append(["Day 7", f"{len(day1_items + day7_items)}", sim_day7["simulated_grade"], f"{sim_day7['simulated_score_percentage']}%", str(sim_day7["simulated_attack_path_count"])])
+
+    if day30_items and sim_day30:
+        sim_data.append(["Day 30", f"{len(plan_items)}", sim_day30["simulated_grade"], f"{sim_day30['simulated_score_percentage']}%", str(sim_day30["simulated_attack_path_count"])])
+
+    # Styled roadmap table
+    roadmap_table = Table(sim_data, colWidths=[25*mm, 20*mm, 25*mm, 25*mm, 35*mm])
+    roadmap_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), STEEL),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.HexColor("#B0BEC5")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ROW_ALT]),
+        
+        # Phase column colors
+        ("BACKGROUND", (0, 1), (0, 1), colors.HexColor("#FFCDD2")),  # Day 1: Light red
+        ("FONTNAME", (0, 1), (0, 1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 2), (0, 2), colors.HexColor("#FFF3E0")),  # Day 7: Light orange  
+        ("FONTNAME", (0, 2), (0, 2), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 3), (0, 3), colors.HexColor("#E8F5E8")),  # Day 30: Light green
+    ]))
+
+    story.append(roadmap_table)
+    story.append(Spacer(1, 14))
+
     
     # ── CONFIGURATION DRIFT ───────────────────────────────────────────────────
     story.extend(_section("Configuration Drift vs Hardened Flask LMS", styles))

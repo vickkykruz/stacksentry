@@ -189,6 +189,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show version information"
     )
     
+    # ==================== POST-PROCESSING / PLANNING ====================
+    parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Print a prioritised hardening plan (Day 1 / Day 7 / Day 30) to the console."
+    )
+
+    parser.add_argument(
+        "--simulate",
+        help=(
+            "Comma-separated list of check IDs to simulate as fixed, e.g. "
+            "APP-DEBUG-001,WS-HSTS-001. Shows simulated grade and score."
+        ),
+        metavar="CHECK_IDS"
+    )
+    
+    parser.add_argument(
+        "--profile",
+        choices=["student", "devops", "pentester", "cto", "generic"],
+        default="generic",
+        help="Generate contextual OWASP narrative for your role (default: generic)"
+    )
+    
     return parser
 
 
@@ -350,6 +373,51 @@ def run_from_args(args: SimpleNamespace) -> None:
     print(f"  Regressed checks: {len(drift['regressed_checks'])}")
     print()
     
+    # ───────── HARDENING PLAN (optional) ─────────
+    if args.plan:
+        if args.verbose:
+            vprint(args.verbose, "Building prioritised hardening plan from scan results...")
+
+        plan_items = scan_result.hardening_plan()
+        if not plan_items:
+            print("🧩 PRIORITISED HARDENING PLAN: no outstanding issues.")
+        else:
+            print("🧩 PRIORITISED HARDENING PLAN (top 5 Day 1 fixes):")
+            day1_items = [i for i in plan_items if i.get("bucket") == "DAY_1"][:5]
+            for item in day1_items:
+                if args.verbose:
+                    vprint(
+                        args.verbose,
+                        f"Selected {item['id']} for Day 1 (score={item['priority_score']})"
+                    )
+                print(
+                    f"  - {item['id']} ({item['layer']}, {item['severity']}, "
+                    f"score={item['priority_score']})"
+                )
+            print("  (Full plan available in PDF/JSON report.)")
+        print()
+        
+    # ───────── WHAT-IF SIMULATION (optional) ─────────
+    if args.simulate:
+        fix_ids = [c.strip() for c in args.simulate.split(",") if c.strip()]
+        if args.verbose:
+            vprint(args.verbose, f"Running what-if simulation for fixes: {fix_ids!r}")
+
+        sim = scan_result.simulate_with_fixes(fix_ids)
+
+        print("🧪 WHAT-IF SIMULATION SUMMARY:")
+        print(f"  Fixing: {', '.join(fix_ids)}")
+        print(
+            f"  Grade: {scan_result.grade.value} → {sim['simulated_grade']} "
+            f"({scan_result.score_percentage}% → {sim['simulated_score_percentage']}%)"
+        )
+        print(
+            f"  Attack paths: {scan_result.attack_path_count} → "
+            f"{sim['simulated_attack_path_count']}"
+        )
+        print("  (Details available in PDF/JSON report.)")
+        print()
+    
     # ───────── JSON EXPORT ─────────
     if args.json:
         try:
@@ -362,7 +430,7 @@ def run_from_args(args: SimpleNamespace) -> None:
     # ───────── PDF EXPORT ─────────
     if args.output:
         try:
-            generate_pdf(scan_result, args.output)
+            generate_pdf(scan_result, args.output, profile=args.profile)
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
             print(f"❌ Failed to generate PDF: {e!r}")
