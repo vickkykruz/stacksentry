@@ -1,5 +1,5 @@
 {
-  "target": "https://admin.vickkykruzprogramming.dev/dashboard",
+  "target": "https://bblearn.londonmet.ac.uk/ultra",
   "mode": "full",
   "checks": [
     {
@@ -14,9 +14,9 @@
       "id": "APP-COOKIE-001",
       "layer": "app",
       "name": "Secure session cookies",
-      "status": "WARN",
+      "status": "PASS",
       "severity": "HIGH",
-      "details": "No cookies observed on root response; cannot assess session cookie security."
+      "details": "At least one cookie appears to use both Secure and HttpOnly flags."
     },
     {
       "id": "APP-CSRF-001",
@@ -46,25 +46,25 @@
       "id": "APP-PASS-001",
       "layer": "app",
       "name": "Strong password policy",
-      "status": "WARN",
+      "status": "PASS",
       "severity": "LOW",
-      "details": "Password hints: 0/5 complexity requirements mentioned."
+      "details": "Password hints: 3/5 complexity requirements mentioned."
     },
     {
       "id": "WS-HSTS-001",
       "layer": "webserver",
       "name": "HSTS header enabled",
-      "status": "FAIL",
+      "status": "PASS",
       "severity": "HIGH",
-      "details": "Strict-Transport-Security header is missing."
+      "details": "HSTS present with strong max-age=63072000."
     },
     {
       "id": "WS-SEC-001",
       "layer": "webserver",
       "name": "Security headers present",
-      "status": "FAIL",
+      "status": "PASS",
       "severity": "HIGH",
-      "details": "0/4 security headers present: []"
+      "details": "3/4 security headers present: ['X-Frame-Options', 'X-Content-Type-Options', 'Content-Security-Policy']"
     },
     {
       "id": "WS-TLS-001",
@@ -78,9 +78,9 @@
       "id": "WS-SRV-001",
       "layer": "webserver",
       "name": "No server version disclosure",
-      "status": "FAIL",
+      "status": "PASS",
       "severity": "MEDIUM",
-      "details": "Server: nginx/1.24.0 (Ubuntu). Version exposed."
+      "details": "Server: . No common server fingerprint detected."
     },
     {
       "id": "WS-DIR-001",
@@ -97,110 +97,30 @@
       "status": "WARN",
       "severity": "LOW",
       "details": "No direct request limit test available. Content-Length: 0"
-    },
-    {
-      "id": "HOST-SSH-001",
-      "layer": "host",
-      "name": "SSH hardening",
-      "status": "PASS",
-      "severity": "HIGH",
-      "details": "SSH root login disabled \u2713 (PermitRootLogin yes)"
-    },
-    {
-      "id": "HOST-FW-001",
-      "layer": "host",
-      "name": "Firewall enabled",
-      "status": "WARN",
-      "severity": "HIGH",
-      "details": "Could not confirm active firewall (ufw not found). Review iptables/nftables rules."
-    },
-    {
-      "id": "HOST-SVC-001",
-      "layer": "host",
-      "name": "Minimal services running",
-      "status": "PASS",
-      "severity": "MEDIUM",
-      "details": "34 services: acceptable"
-    },
-    {
-      "id": "HOST-UPDATE-001",
-      "layer": "host",
-      "name": "Automatic updates configured",
-      "status": "WARN",
-      "severity": "MEDIUM",
-      "details": "Install: apt install unattended-upgrades && systemctl enable"
-    },
-    {
-      "id": "HOST-PERM-001",
-      "layer": "host",
-      "name": "Secure SSH file permissions",
-      "status": "PASS",
-      "severity": "MEDIUM",
-      "details": "No insecure permissions detected"
-    },
-    {
-      "id": "HOST-LOG-001",
-      "layer": "host",
-      "name": "Logging service active",
-      "status": "WARN",
-      "severity": "LOW",
-      "details": "Install logging: apt install rsyslog"
-    },
-    {
-      "id": "HOST-SVC-GUNICORN",
-      "layer": "host",
-      "name": "Gunicorn runs as non-root",
-      "status": "PASS",
-      "severity": "HIGH",
-      "details": "Gunicorn runs as non-root user 'www-data' \u2713"
-    },
-    {
-      "id": "HOST-SVC-UWSGI",
-      "layer": "host",
-      "name": "uWSGI runs as non-root",
-      "status": "PASS",
-      "severity": "HIGH",
-      "details": "uWSGI runs as non-root user '' \u2713"
-    },
-    {
-      "id": "HOST-SVC-MYSQL",
-      "layer": "host",
-      "name": "MySQL runs as non-root",
-      "status": "PASS",
-      "severity": "HIGH",
-      "details": "MySQL runs as non-root user '' \u2713"
-    },
-    {
-      "id": "HOST-SVC-REDIS",
-      "layer": "host",
-      "name": "Redis runs as non-root",
-      "status": "PASS",
-      "severity": "HIGH",
-      "details": "Redis runs as non-root user 'redis' \u2713"
     }
   ],
   "summary": {
-    "total_checks": 22,
+    "total_checks": 12,
     "grade": "F",
-    "score_percentage": 40.9,
+    "score_percentage": 58.3,
     "status_breakdown": {
-      "PASS": 9,
-      "WARN": 8,
-      "FAIL": 5
+      "PASS": 7,
+      "FAIL": 2,
+      "WARN": 3
     },
     "severity_breakdown": {
-      "HIGH": 11,
-      "MEDIUM": 8,
-      "LOW": 3
+      "HIGH": 5,
+      "MEDIUM": 5,
+      "LOW": 2
     },
-    "high_risk_issues": 5
+    "high_risk_issues": 1
   },
   "score": {
-    "percentage": 40.9,
+    "percentage": 58.3,
     "grade": "F",
-    "pass_rate": "40.9%"
+    "pass_rate": "58.3%"
   },
-  "stack_fingerprint": "Nginx + Ubuntu",
+  "stack_fingerprint": "Unknown stack",
   "attack_paths": [
     {
       "id": "AP-003",
@@ -223,30 +143,21 @@
   "layer_summary": {
     "app": {
       "total": 6,
-      "passed": 1,
-      "failed": 5,
-      "warned": 0,
-      "color": "\ud83d\udd34",
-      "risk": "HIGH",
-      "pass_rate": 16.7
-    },
-    "webserver": {
-      "total": 6,
-      "passed": 1,
-      "failed": 5,
-      "warned": 0,
-      "color": "\ud83d\udd34",
-      "risk": "HIGH",
-      "pass_rate": 16.7
-    },
-    "host": {
-      "total": 10,
-      "passed": 7,
+      "passed": 3,
       "failed": 3,
       "warned": 0,
       "color": "\ud83d\udfe1",
       "risk": "MEDIUM",
-      "pass_rate": 70.0
+      "pass_rate": 50.0
+    },
+    "webserver": {
+      "total": 6,
+      "passed": 4,
+      "failed": 2,
+      "warned": 0,
+      "color": "\ud83d\udfe1",
+      "risk": "MEDIUM",
+      "pass_rate": 66.7
     }
   }
 }
