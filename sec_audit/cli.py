@@ -1,6 +1,6 @@
 """
 Command line argument parsing and validation.
-
+ 
 Supports:
 --target URL          Target web application
 --mode full|quick     Scan scope
@@ -9,14 +9,14 @@ Supports:
 --output PATH         PDF report path
 --json PATH           JSON export path
 """
-
-
+ 
+ 
 # Uses argparse for CLI interface
 import json
 import time
 import argparse
 from types import SimpleNamespace
-
+ 
 from sec_audit.config import get_layer_totals
 from scanners.http_scanner import HttpScanner
 from checks.app_checks import (
@@ -65,11 +65,13 @@ from checks.host_checks import (
 from sec_audit.results import CheckResult, ScanResult
 from sec_audit.baseline import HARDENED_FLASK_BASELINE
 from reporting.pdf_generator import generate_pdf
-
-
+from storage.history import ScanHistory
+from storage.drift import DriftEngine
+ 
+ 
 def vprint(verbose: bool, msg: str) -> None:
     """Print debug messages only when --verbose is enabled.
-
+ 
     Args:
         verbose (bool): True if required for logging otherwise False for don't log
         msg (str): Logging Message
@@ -77,10 +79,10 @@ def vprint(verbose: bool, msg: str) -> None:
     if verbose:
         print(f"[DEBUG] {msg}")
         
-
+ 
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure the argument parser."""
-
+ 
     parser = argparse.ArgumentParser(
         prog="sec_audit",
         description="""
@@ -96,19 +98,19 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         🚀 USAGE EXAMPLES:
-
+ 
             BASIC SCAN (HTTP only):
             python sec_audit.py --target https://example.com
-
+ 
             FULL STACK SCAN (HTTP + Docker + SSH):
             python sec_audit.py --target https://lms.example.com --mode full --output report.pdf
-
+ 
             DEVELOPMENT / LOCAL:
             python sec_audit.py --target http://localhost:5000 --json results.json
-
+ 
             CI/CD PIPELINE:
             python sec_audit.py --target $APP_URL --json /tmp/audit.json --mode quick
-
+ 
             📄 Output Formats:
             --output report.pdf    → Professional PDF remediation report
             --json results.json    → Structured JSON for automation
@@ -195,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print a prioritised hardening plan (Day 1 / Day 7 / Day 30) to the console."
     )
-
+ 
     parser.add_argument(
         "--simulate",
         help=(
@@ -211,14 +213,146 @@ def build_parser() -> argparse.ArgumentParser:
         default="generic",
         help="Generate contextual OWASP narrative for your role (default: generic)"
     )
-    
+ 
+    # ==================== HISTORY / DRIFT ====================
+    parser.add_argument(
+        "--compare-last",
+        action="store_true",
+        help=(
+            "After scanning, compare results against the previous scan for this "
+            "target and print a drift report showing what regressed or improved."
+        ),
+    )
+ 
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help=(
+            "Print the full scan history timeline for --target and exit. "
+            "Does not run a new scan."
+        ),
+    )
+ 
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help=(
+            "Do not save this scan to the local history database. "
+            "Useful for CI/CD pipelines or one-off checks."
+        ),
+    )
+ 
+    parser.add_argument(
+        "--db-path",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to a custom StackSentry history database. "
+            "Defaults to ~/.stacksentry/history.db"
+        ),
+    )
+ 
     return parser
-
-
+ 
+ 
+def _print_history(target: str, db_path: str = None) -> None:
+    """Print the scan history timeline for a target and exit."""
+    history = ScanHistory(db_path)
+    rows = history.all_for(target, limit=50)
+ 
+    if not rows:
+        print(f"  No scan history found for: {target}")
+        print(f"  Run a scan first: stacksentry --target {target}")
+        return
+ 
+    count = history.count(target)
+    print(f"\n📅  SCAN HISTORY — {target}")
+    print(f"    {count} scan(s) recorded in {history.db_path}")
+    print()
+    print(f"  {'Date/Time':<26} {'Grade':<7} {'Score':<8} {'Passed':<8} {'Failed':<8} {'Mode'}")
+    print(f"  {'-'*24:<26} {'-'*5:<7} {'-'*6:<8} {'-'*6:<8} {'-'*6:<8} {'-'*5}")
+ 
+    for row in rows:
+        scanned_at = row["scanned_at"][:19].replace("T", " ")  # trim to readable datetime
+        grade      = row["grade"]
+        score      = f"{row['score_percentage']:.1f}%"
+        passed     = str(row["passed_checks"])
+        failed     = str(row["failed_checks"])
+        mode       = row["mode"]
+        print(f"  {scanned_at:<26} {grade:<7} {score:<8} {passed:<8} {failed:<8} {mode}")
+ 
+    print()
+ 
+ 
+def _print_drift_report(drift_report, verbose: bool = False) -> None:
+    """Print a formatted drift report to the console."""
+    from storage.drift import DriftReport
+ 
+    r = drift_report
+ 
+    if r.is_first_scan:
+        print("📊  POSTURE HISTORY: First scan recorded — no baseline to compare against.")
+        print(f"    Future scans will be compared against today's results.")
+        print()
+        return
+ 
+    # Header
+    trend_icon = {"improving": "📈", "regressing": "📉", "stable": "➡️"}.get(r.overall_trend, "➡️")
+    print(f"\n{trend_icon}  POSTURE DRIFT — since last scan {r.elapsed_days:.0f} day(s) ago")
+    print(f"    {r.summary_line}")
+    print()
+ 
+    # Grade / score comparison
+    direction_symbol = {"improved": "↑", "regressed": "↓", "stable": "→"}.get(r.grade_direction, "→")
+    delta_sign = "+" if r.score_delta >= 0 else ""
+    print(f"  Grade:  {r.grade_then}  {direction_symbol}  {r.grade_now}   "
+          f"({delta_sign}{r.score_delta:.1f}% score change)")
+    print()
+ 
+    # Regressions — most important, shown first
+    if r.regressions:
+        print(f"  ❌ Regressed ({len(r.regressions)} check(s) — was PASS, now FAIL/WARN):")
+        for check_id in r.regressions:
+            print(f"     • {check_id}")
+        print()
+ 
+    # New failures
+    if r.new_failures:
+        print(f"  🆕 New failures ({len(r.new_failures)} check(s)):")
+        for check_id in r.new_failures:
+            print(f"     • {check_id}")
+        print()
+ 
+    # Improvements
+    if r.improvements:
+        print(f"  ✅ Improved ({len(r.improvements)} check(s) — now PASS):")
+        for check_id in r.improvements:
+            print(f"     • {check_id}")
+        print()
+ 
+    # Stable failures — persistent issues that need attention
+    if r.stable_failures:
+        print(f"  ⚠️  Persistent failures ({len(r.stable_failures)} check(s) — still failing):")
+        for check_id in r.stable_failures[:5]:  # cap at 5 to keep output readable
+            print(f"     • {check_id}")
+        if len(r.stable_failures) > 5:
+            print(f"     ... and {len(r.stable_failures) - 5} more. See PDF report for full list.")
+        print()
+ 
+    if not r.regressions and not r.new_failures and not r.improvements:
+        print("  No changes detected since last scan.")
+        print()
+ 
+ 
 def run_from_args(args: SimpleNamespace) -> None:
     """Execute scan based on parsed arguments."""
     start = time.time()
-    
+ 
+    # ───────── --history: show timeline and exit (no scan needed) ─────────
+    if getattr(args, "history", False):
+        _print_history(args.target, getattr(args, "db_path", None))
+        return
+ 
     print(f"🏛️  [SEC-AUDIT v1.0.0] Starting scan...")
     print(f"  🎯 Target: {args.target}")
     print(f"  ⚙️  Mode: {args.mode}")
@@ -350,10 +484,38 @@ def run_from_args(args: SimpleNamespace) -> None:
             vprint(args.verbose, "Starting compose_file config checks...")
         results.append(check_compose_resource_limits(args.compose_file, verbose=args.verbose))
         results.append(check_compose_ports(args.compose_file, verbose=args.verbose))
-
+ 
     # Attach final results
     scan_result.checks = results
-    
+ 
+    # ───────── AUTO-SAVE TO HISTORY ─────────
+    history = ScanHistory(getattr(args, "db_path", None))
+    drift_report = None
+ 
+    if not getattr(args, "no_save", False):
+        try:
+            history.save(scan_result)
+            if args.verbose:
+                vprint(args.verbose, f"Scan saved to history: {history.db_path}")
+        except Exception as e:
+            if args.verbose:
+                vprint(args.verbose, f"Could not save to history: {e!r}")
+ 
+    # ───────── DRIFT COMPARISON ─────────
+    # Always compare against previous scan (shown only when --compare-last)
+    # so the data is available for the PDF report regardless of CLI flags.
+    try:
+        engine = DriftEngine()
+        baseline = history.previous(scan_result.target, scan_result.generated_at)
+        if baseline:
+            drift_report = engine.compare(baseline, scan_result)
+        else:
+            drift_report = engine.first_scan_report(scan_result)
+    except Exception as e:
+        if args.verbose:
+            vprint(args.verbose, f"Drift comparison failed: {e!r}")
+        drift_report = None
+ 
     # ───────── SCORING ─────────
     print("📊 OVERALL SCORE:")
     print(f"  Grade: {scan_result.grade} ({scan_result.score_percentage}%)")
@@ -372,12 +534,18 @@ def run_from_args(args: SimpleNamespace) -> None:
     print(f"  Improved checks: {len(drift['improved_checks'])}")
     print(f"  Regressed checks: {len(drift['regressed_checks'])}")
     print()
+ 
+    # ───────── POSTURE DRIFT (vs previous scan) ─────────
+    if getattr(args, "compare_last", False) and drift_report:
+        _print_drift_report(drift_report, verbose=args.verbose)
+    elif drift_report and not drift_report.is_first_scan and args.verbose:
+        vprint(args.verbose, f"Drift: {drift_report.summary_line}")
     
     # ───────── HARDENING PLAN (optional) ─────────
     if args.plan:
         if args.verbose:
             vprint(args.verbose, "Building prioritised hardening plan from scan results...")
-
+ 
         plan_items = scan_result.hardening_plan()
         if not plan_items:
             print("🧩 PRIORITISED HARDENING PLAN: no outstanding issues.")
@@ -402,9 +570,9 @@ def run_from_args(args: SimpleNamespace) -> None:
         fix_ids = [c.strip() for c in args.simulate.split(",") if c.strip()]
         if args.verbose:
             vprint(args.verbose, f"Running what-if simulation for fixes: {fix_ids!r}")
-
+ 
         sim = scan_result.simulate_with_fixes(fix_ids)
-
+ 
         print("🧪 WHAT-IF SIMULATION SUMMARY:")
         print(f"  Fixing: {', '.join(fix_ids)}")
         print(
@@ -430,10 +598,12 @@ def run_from_args(args: SimpleNamespace) -> None:
     # ───────── PDF EXPORT ─────────
     if args.output:
         try:
-            generate_pdf(scan_result, args.output, profile=args.profile)
+            generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report)
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
             print(f"❌ Failed to generate PDF: {e!r}")
     end = time.time()
-    duration = end - start 
-    print(f"⏱  Scan duration: {duration:.1f} seconds")
+    duration = end - start
+    scan_count = history.count(args.target)
+    print(f"⏱  Scan duration: {duration:.1f} seconds  "
+          f"(scan #{scan_count} for this target — history at {history.db_path})")

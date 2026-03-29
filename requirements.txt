@@ -1,16 +1,7 @@
-**`requirements.txt`** — production only:
-```
 requests>=2.32.0
 docker==7.0.0
 paramiko==3.4.0
 PyYAML==6.0.1
 reportlab==4.2.2
 nginxparser_eb
-```
 
-**`requirements-dev.txt`** — development only:
-```
--r requirements.txt
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.0

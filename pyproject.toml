@@ -34,7 +34,7 @@ dev = [
 stacksentry = "sec_audit.cli:main"
  
 [tool.hatch.build.targets.wheel]
-packages = ["sec_audit", "checks", "scanners", "reporting"]
+packages = ["sec_audit", "checks", "scanners", "reporting", "storage"]
  
 # ── Pytest configuration ──────────────────────────────────────────────────────
 [tool.pytest.ini_options]
