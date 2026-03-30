@@ -54,17 +54,17 @@
       "id": "WS-HSTS-001",
       "layer": "webserver",
       "name": "HSTS header enabled",
-      "status": "FAIL",
+      "status": "PASS",
       "severity": "HIGH",
-      "details": "Strict-Transport-Security header is missing."
+      "details": "HSTS present with strong max-age=31536000."
     },
     {
       "id": "WS-SEC-001",
       "layer": "webserver",
       "name": "Security headers present",
-      "status": "FAIL",
+      "status": "PASS",
       "severity": "HIGH",
-      "details": "0/4 security headers present: []"
+      "details": "3/4 security headers present: ['X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy']"
     },
     {
       "id": "WS-TLS-001",
@@ -78,9 +78,9 @@
       "id": "WS-SRV-001",
       "layer": "webserver",
       "name": "No server version disclosure",
-      "status": "FAIL",
+      "status": "WARN",
       "severity": "MEDIUM",
-      "details": "Server: nginx/1.24.0 (Ubuntu). Version exposed."
+      "details": "Server: nginx. Version hidden."
     },
     {
       "id": "WS-DIR-001",
@@ -182,25 +182,25 @@
   "summary": {
     "total_checks": 22,
     "grade": "F",
-    "score_percentage": 40.9,
+    "score_percentage": 50.0,
     "status_breakdown": {
-      "PASS": 9,
-      "WARN": 6,
-      "FAIL": 7
+      "PASS": 11,
+      "WARN": 7,
+      "FAIL": 4
     },
     "severity_breakdown": {
       "HIGH": 11,
       "MEDIUM": 8,
       "LOW": 3
     },
-    "high_risk_issues": 6
+    "high_risk_issues": 4
   },
   "score": {
-    "percentage": 40.9,
+    "percentage": 50.0,
     "grade": "F",
-    "pass_rate": "40.9%"
+    "pass_rate": "50.0%"
   },
-  "stack_fingerprint": "Nginx + Ubuntu",
+  "stack_fingerprint": "Nginx",
   "attack_paths": [
     {
       "id": "AP-003",
@@ -232,12 +232,12 @@
     },
     "webserver": {
       "total": 6,
-      "passed": 1,
-      "failed": 5,
+      "passed": 3,
+      "failed": 3,
       "warned": 0,
-      "color": "\ud83d\udd34",
-      "risk": "HIGH",
-      "pass_rate": 16.7
+      "color": "\ud83d\udfe1",
+      "risk": "MEDIUM",
+      "pass_rate": 50.0
     },
     "host": {
       "total": 10,
@@ -257,9 +257,9 @@
       "severity": "HIGH",
       "layer": "app",
       "source": "AI-generated",
-      "instructions": "1. Save this script as APP-COOKIE-001.sh\n2. Make it executable: chmod +x APP-COOKIE-001.sh\n3. Run in dry-run mode first: sudo ./APP-COOKIE-001.sh\n4. Review the proposed changes\n5. Apply the patch: sudo ./APP-COOKIE-001.sh --apply\n6. The script will create backups, modify Nginx configuration, validate settings, and reload Nginx",
-      "verification": "curl -I http://localhost/ | grep -i 'set-cookie\\|x-content-type-options\\|x-frame-options'",
-      "path": "patches\\APP-COOKIE-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "instructions": "1. Save this script as APP-COOKIE-001.sh\n2. Make it executable: chmod +x APP-COOKIE-001.sh\n3. Run dry-run first to see changes: ./APP-COOKIE-001.sh --dry-run\n4. Apply the fix: sudo ./APP-COOKIE-001.sh --apply\n5. Verify cookies are now secure using browser dev tools or curl -v",
+      "verification": "curl -v https://your-domain.com/ 2>&1 | grep -i 'set-cookie' | grep -i 'secure\\|httponly\\|samesite'",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-COOKIE-001_admin-vickkykruzprogramming-dev_20260330.sh"
     },
     {
       "check_id": "APP-CSRF-001",
@@ -270,7 +270,7 @@
       "source": "standard",
       "instructions": "For Flask: install flask-wtf and initialise CSRFProtect. For Django: ensure CsrfViewMiddleware is in MIDDLEWARE and {% csrf_token %} is in all POST forms.",
       "verification": "curl -X POST https://your-app.com/login -d 'user=x' | grep -i '403\\|csrf'",
-      "path": "patches\\APP-CSRF-001_admin-vickkykruzprogramming-dev_20260330.py"
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-CSRF-001_admin-vickkykruzprogramming-dev_20260330.py"
     },
     {
       "check_id": "APP-ADMIN-001",
@@ -279,53 +279,31 @@
       "severity": "MEDIUM",
       "layer": "app",
       "source": "AI-generated",
-      "instructions": "1. Save this script as APP-ADMIN-001-patch.sh\n2. Make it executable: chmod +x APP-ADMIN-001-patch.sh\n3. Run in dry-run mode first: ./APP-ADMIN-001-patch.sh\n4. Review the proposed changes carefully\n5. Apply the patch: sudo ./APP-ADMIN-001-patch.sh --apply\n6. Verify the configuration is included in your main nginx config\n7. Test admin endpoints to ensure they are properly restricted\n8. Update IP allow lists if needed for your specific environment",
-      "verification": "curl -I http://localhost/admin && nginx -t && systemctl status nginx",
-      "path": "patches\\APP-ADMIN-001_admin-vickkykruzprogramming-dev_20260330.conf"
+      "instructions": "1. Save this patch as 'APP-ADMIN-001.conf' 2. Make it executable: chmod +x APP-ADMIN-001.conf 3. Run dry-run first: ./APP-ADMIN-001.conf 4. Review the changes that would be made 5. Apply the fix: ./APP-ADMIN-001.conf --apply 6. The script will automatically backup your config, test it, and reload nginx",
+      "verification": "curl -I http://localhost/admin && curl -I http://localhost/debug && curl -I http://localhost/test && curl -I http://localhost/wp-admin",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-ADMIN-001_admin-vickkykruzprogramming-dev_20260330.conf"
     },
     {
       "check_id": "APP-RATE-001",
-      "filename": "APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.py",
-      "file_type": "python",
+      "filename": "APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.conf",
+      "file_type": "nginx",
       "severity": "MEDIUM",
       "layer": "app",
-      "source": "standard",
-      "instructions": "For Flask: install Flask-Limiter and apply limits to sensitive routes. For production, use Redis as storage_uri instead of memory://. Nginx-level rate limiting is recommended as an additional layer.",
-      "verification": "for i in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code}\\n' https://your-app.com/api/; done",
-      "path": "patches\\APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.py"
+      "source": "AI-generated",
+      "instructions": "1. Save this script to a file (e.g., fix-rate-limiting.sh)\n2. Make it executable: chmod +x fix-rate-limiting.sh\n3. Run in dry-run mode first: ./fix-rate-limiting.sh --dry-run\n4. Review the proposed changes\n5. Apply the changes: ./fix-rate-limiting.sh --apply\n6. Add the example server block rules to your specific server configurations\n7. Reload nginx: systemctl reload nginx",
+      "verification": "curl -I http://localhost && nginx -T | grep -A 5 'limit_req_zone'",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.conf"
     },
     {
       "check_id": "APP-PASS-001",
-      "filename": "APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
+      "filename": "APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.py",
+      "file_type": "python",
       "severity": "LOW",
       "layer": "app",
-      "source": "AI-generated",
-      "instructions": "1. Make the script executable: chmod +x APP-PASS-001.sh\n2. First run in dry-run mode to see what changes will be made: ./APP-PASS-001.sh\n3. Review the proposed changes carefully\n4. Apply the fix with: sudo ./APP-PASS-001.sh --apply\n5. Test password policy with a test user or passwd command\n6. Verify that weak passwords are rejected",
-      "verification": "pwscore <<< 'weakpass' || echo 'Password policy is active - weak passwords rejected'",
-      "path": "patches\\APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "WS-HSTS-001",
-      "filename": "WS-HSTS-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "HIGH",
-      "layer": "webserver",
-      "source": "AI-generated",
-      "instructions": "1. Save this script to a file (e.g., fix-hsts.sh)\n2. Make it executable: chmod +x fix-hsts.sh\n3. Run in dry-run mode first: sudo ./fix-hsts.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./fix-hsts.sh --apply\n6. Verify with: curl -I https://yourdomain.com | grep -i strict-transport",
-      "verification": "curl -I https://yourdomain.com | grep -i strict-transport",
-      "path": "patches\\WS-HSTS-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "WS-SEC-001",
-      "filename": "WS-SEC-001_admin-vickkykruzprogramming-dev_20260330.conf",
-      "file_type": "nginx",
-      "severity": "HIGH",
-      "layer": "webserver",
       "source": "standard",
-      "instructions": "Add all four header lines to your nginx server block. Adjust the Content-Security-Policy if your app loads resources from external CDNs. Test with `nginx -t` before reloading.",
-      "verification": "curl -I https://your-domain.com | grep -iE 'x-frame|x-content|referrer|content-security'",
-      "path": "patches\\WS-SEC-001_admin-vickkykruzprogramming-dev_20260330.conf"
+      "instructions": "Add the validate_password function to your user registration and password change routes.",
+      "verification": "Test registration with a weak password like '123' \u2014 it should return a 400 error.",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.py"
     },
     {
       "check_id": "WS-TLS-001",
@@ -336,7 +314,7 @@
       "source": "standard",
       "instructions": "Add these directives to your nginx HTTPS server block. After applying, verify with SSL Labs: https://www.ssllabs.com/ssltest/analyze.html?d=your-domain.com",
       "verification": "openssl s_client -connect your-domain.com:443 -tls1 2>&1 | grep 'handshake failure'",
-      "path": "patches\\WS-TLS-001_admin-vickkykruzprogramming-dev_20260330.conf"
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-TLS-001_admin-vickkykruzprogramming-dev_20260330.conf"
     },
     {
       "check_id": "WS-SRV-001",
@@ -345,9 +323,9 @@
       "severity": "MEDIUM",
       "layer": "webserver",
       "source": "AI-generated",
-      "instructions": "1. Save this script as WS-SRV-001.sh\n2. Make it executable: chmod +x WS-SRV-001.sh\n3. Run dry-run first: sudo ./WS-SRV-001.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./WS-SRV-001.sh --apply\n6. The script will backup the original config, apply the fix, test the config, and reload Nginx",
+      "instructions": "1. Save this script as WS-SRV-001.sh\n2. Make it executable: chmod +x WS-SRV-001.sh\n3. Run in dry-run mode first: ./WS-SRV-001.sh --dry-run\n4. Review the changes that would be made\n5. Apply the fix: sudo ./WS-SRV-001.sh --apply\n6. The script will automatically backup your config, test it, and reload nginx",
       "verification": "curl -I http://localhost | grep -i server",
-      "path": "patches\\WS-SRV-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-SRV-001_admin-vickkykruzprogramming-dev_20260330.sh"
     },
     {
       "check_id": "WS-LIMIT-001",
@@ -356,9 +334,9 @@
       "severity": "LOW",
       "layer": "webserver",
       "source": "AI-generated",
-      "instructions": "1. Save this script to a file (e.g., fix-ws-limit-001.sh)\\n2. Make it executable: chmod +x fix-ws-limit-001.sh\\n3. Run in dry-run mode first: ./fix-ws-limit-001.sh\\n4. Review the proposed changes\\n5. Apply the fix: ./fix-ws-limit-001.sh --apply\\n6. Verify nginx is running properly after the change",
-      "verification": "grep -n \"client_max_body_size\" /etc/nginx/nginx.conf && nginx -t",
-      "path": "patches\\WS-LIMIT-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "instructions": "1. Save this script as WS-LIMIT-001.sh\n2. Make it executable: chmod +x WS-LIMIT-001.sh\n3. Run in dry-run mode first: ./WS-LIMIT-001.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./WS-LIMIT-001.sh --apply\n6. Reload Nginx: sudo systemctl reload nginx",
+      "verification": "nginx -t && grep -r \"client_max_body_size\" /etc/nginx/",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-LIMIT-001_admin-vickkykruzprogramming-dev_20260330.sh"
     },
     {
       "check_id": "HOST-SSH-001",
@@ -367,9 +345,9 @@
       "severity": "HIGH",
       "layer": "host",
       "source": "AI-generated",
-      "instructions": "1. Save this script to a file (e.g., fix-ssh-root-login.sh)\n2. Make it executable: chmod +x fix-ssh-root-login.sh\n3. Run in dry-run mode first: sudo ./fix-ssh-root-login.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./fix-ssh-root-login.sh --apply\n6. Verify SSH service is running and test login from another session before closing current session",
-      "verification": "sudo sshd -t && grep '^PermitRootLogin no' /etc/ssh/sshd_config && systemctl is-active ssh",
-      "path": "patches\\HOST-SSH-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "instructions": "1. Save this script as HOST-SSH-001.sh\n2. Make it executable: chmod +x HOST-SSH-001.sh\n3. Run in dry-run mode first: sudo ./HOST-SSH-001.sh --dry-run\n4. Review the proposed changes\n5. Apply the fix: sudo ./HOST-SSH-001.sh --apply\n6. Verify SSH service is running and configuration is correct\n7. Test SSH access with non-root user before disconnecting",
+      "verification": "grep '^PermitRootLogin no' /etc/ssh/sshd_config && systemctl is-active ssh",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-SSH-001_admin-vickkykruzprogramming-dev_20260330.sh"
     },
     {
       "check_id": "HOST-FW-001",
@@ -377,10 +355,10 @@
       "file_type": "shell",
       "severity": "HIGH",
       "layer": "host",
-      "source": "AI-generated",
-      "instructions": "1. Save the patch as HOST-FW-001.sh\n2. Make it executable: chmod +x HOST-FW-001.sh\n3. Run dry-run first: sudo ./HOST-FW-001.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./HOST-FW-001.sh --apply\n6. Verify SSH access still works before closing current session",
-      "verification": "sudo ufw status verbose | grep -E '(Status: active|22/tcp|80/tcp|443/tcp)'",
-      "path": "patches\\HOST-FW-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "source": "standard",
+      "instructions": "Run `bash patches/HOST-FW-001.sh` for a dry run. Then `bash patches/HOST-FW-001.sh --apply` on the server. This opens ports 22, 80, and 443. Add any additional ports your application needs before running.",
+      "verification": "sudo ufw status verbose | grep -i 'status: active'",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-FW-001_admin-vickkykruzprogramming-dev_20260330.sh"
     },
     {
       "check_id": "HOST-SVC-001",
@@ -389,13 +367,13 @@
       "severity": "MEDIUM",
       "layer": "host",
       "source": "AI-generated",
-      "instructions": "1. Save this script as HOST-SVC-001.sh\n2. Make it executable: chmod +x HOST-SVC-001.sh\n3. Run in dry-run mode first: sudo ./HOST-SVC-001.sh --dry-run\n4. Review the proposed changes carefully\n5. Apply the changes: sudo ./HOST-SVC-001.sh --apply\n6. Verify nginx is still running and accessible\n7. If issues occur, restore from backup using the commands shown in the script output",
-      "verification": "systemctl list-units --state=running --type=service --no-legend | wc -l",
-      "path": "patches\\HOST-SVC-001_admin-vickkykruzprogramming-dev_20260330.sh"
+      "instructions": "1. Download the script to your server\n2. Make it executable: chmod +x HOST-SVC-001.sh\n3. Run in dry-run mode first: ./HOST-SVC-001.sh --dry-run\n4. Review the output and services marked for disabling\n5. If satisfied, apply changes: ./HOST-SVC-001.sh --apply\n6. Reboot and test your Nginx web stack functionality\n7. If issues occur, use the restore commands shown in the output",
+      "verification": "systemctl list-units --type=service --state=running | wc -l",
+      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-SVC-001_admin-vickkykruzprogramming-dev_20260330.sh"
     }
   ],
   "auto_fix": {
-    "fixed": 3,
+    "fixed": 1,
     "failed": 4,
     "manual": 6,
     "results": [
@@ -445,29 +423,11 @@
         "verified": false
       },
       {
-        "check_id": "WS-HSTS-001",
-        "check_name": "HSTS header enabled",
-        "layer": "webserver",
-        "status": "fixed",
-        "message": "Applied 6 command(s) successfully.",
-        "commands_run": 6,
-        "verified": false
-      },
-      {
-        "check_id": "WS-SEC-001",
-        "check_name": "Security headers present",
-        "layer": "webserver",
-        "status": "fixed",
-        "message": "Applied 6 command(s) successfully.",
-        "commands_run": 6,
-        "verified": false
-      },
-      {
         "check_id": "WS-TLS-001",
         "check_name": "TLS 1.2+ with strong ciphers",
         "layer": "webserver",
         "status": "failed",
-        "message": "Validation failed: 2026/03/30 11:29:19 [emerg] 1903815#1903815: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
+        "message": "Validation failed: 2026/03/30 17:40:30 [emerg] 1909287#1909287: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
         "commands_run": 4,
         "verified": false
       },
@@ -476,7 +436,7 @@
         "check_name": "No server version disclosure",
         "layer": "webserver",
         "status": "failed",
-        "message": "Validation failed: 2026/03/30 11:29:22 [emerg] 1903867#1903867: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
+        "message": "Validation failed: 2026/03/30 17:40:33 [emerg] 1909341#1909341: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
         "commands_run": 3,
         "verified": false
       },
@@ -485,7 +445,7 @@
         "check_name": "Request size limits",
         "layer": "webserver",
         "status": "failed",
-        "message": "Validation failed: 2026/03/30 11:29:25 [emerg] 1903918#1903918: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
+        "message": "Validation failed: 2026/03/30 17:40:35 [emerg] 1909393#1909393: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
         "commands_run": 2,
         "verified": false
       },
