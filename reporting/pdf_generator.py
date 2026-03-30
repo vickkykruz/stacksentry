@@ -211,7 +211,7 @@ def _grade_badge(scan_result: ScanResult, styles) -> Table:
  
  
 # ── Main generate function ────────────────────────────────────────────────────
-def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "generic", drift_report=None, simulation_result=None, patch_results=None) -> None:
+def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "generic", drift_report=None, simulation_result=None, patch_results=None, fix_results=None) -> None:
     """
     Generate a professional PDF security audit report from ScanResult.
  
@@ -284,13 +284,12 @@ def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "gene
         textColor=TEXT_DARK, leading=14, wordWrap="CJK",
     )
     # Use profile-aware narrative if a specific profile was requested
-    if profile and profile != "generic":
-        try:
-            from sec_audit.narratives import generate_owasp_narrative
+    try:
+        if profile and profile != "generic":
             narrative_text = generate_owasp_narrative(scan_result, profile)
-        except Exception:
+        else:
             narrative_text = scan_result.executive_narrative()
-    else:
+    except Exception:
         narrative_text = scan_result.executive_narrative()
     narrative_inner = Table(
         [
@@ -744,7 +743,10 @@ def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "gene
     story.append(Spacer(1, 10))
     
     # ── OWASP CONTEXTUAL NARRATIVE ───────────────────────────────────────────
-    owasp_narrative = generate_owasp_narrative(scan_result, profile)
+    try:
+        owasp_narrative = generate_owasp_narrative(scan_result, profile)
+    except Exception:
+        owasp_narrative = scan_result.executive_narrative()
  
     narrative_style = ParagraphStyle(
         "owasp_narr",
@@ -1196,6 +1198,104 @@ def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "gene
             ParagraphStyle("sim_note", fontName="Helvetica", fontSize=8,
                            textColor=TEXT_MUTED, leading=12),
         ))
+ 
+    # ── AUTO-FIX RESULTS ─────────────────────────────────────────────────────
+    if fix_results:
+        story.append(Spacer(1, 14))
+        story.extend(_section("Auto-Fix Results", styles))
+ 
+        _fx_hdr  = ParagraphStyle("fx_hdr",  fontName="Helvetica-Bold", fontSize=8,
+                                   textColor=colors.white, alignment=TA_CENTER)
+        _fx_cell = ParagraphStyle("fx_cell", fontName="Helvetica", fontSize=8,
+                                   textColor=TEXT_DARK, leading=11, wordWrap="CJK")
+        _fx_msg  = ParagraphStyle("fx_msg",  fontName="Helvetica", fontSize=7,
+                                   textColor=TEXT_MUTED, leading=10, wordWrap="CJK")
+ 
+        STATUS_STYLE = {
+            "fixed":            (PASS_GREEN,  "FIXED"),
+            "failed":           (FAIL_RED,    "FAILED"),
+            "skipped":          (STEEL,       "SKIPPED"),
+            "not_automatable":  (WARN_AMBER,  "MANUAL"),
+        }
+ 
+        fixed_n  = sum(1 for r in fix_results if r.status == "fixed")
+        failed_n = sum(1 for r in fix_results if r.status == "failed")
+        manual_n = sum(1 for r in fix_results if r.status in ("skipped", "not_automatable"))
+ 
+        # Summary banner
+        summary_style = ParagraphStyle("fx_sum", fontName="Helvetica-Bold", fontSize=9,
+                                       textColor=TEXT_DARK, leading=13)
+        summary_text  = (
+            f"<b>{fixed_n}</b> fixed automatically via SSH  •  "
+            f"<b>{failed_n}</b> failed  •  "
+            f"<b>{manual_n}</b> require manual action (APP/CONT layer)"
+        )
+        story.append(Paragraph(summary_text, summary_style))
+        story.append(Spacer(1, 8))
+ 
+        # Table header
+        fix_header = Table([[
+            Paragraph("Check ID",  _fx_hdr),
+            Paragraph("Layer",     _fx_hdr),
+            Paragraph("Status",    _fx_hdr),
+            Paragraph("Result",    _fx_hdr),
+        ]], colWidths=[35*mm, 25*mm, 25*mm, PAGE_W - 2*MARGIN - 85*mm])
+        fix_header.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), NAVY),
+            ("TOPPADDING",    (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(fix_header)
+ 
+        for idx, r in enumerate(fix_results):
+            row_bg                    = ROW_ALT if idx % 2 == 0 else colors.white
+            pill_color, pill_label    = STATUS_STYLE.get(r.status, (STEEL, r.status.upper()))
+            left_stripe               = pill_color
+ 
+            status_pill = Table(
+                [[Paragraph(pill_label,
+                    ParagraphStyle("fxp", fontName="Helvetica-Bold", fontSize=7,
+                                   textColor=colors.white, alignment=TA_CENTER))]],
+                colWidths=[25*mm],
+            )
+            status_pill.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), pill_color),
+                ("TOPPADDING",    (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+            ]))
+ 
+            fix_row = Table([[
+                Paragraph(r.check_id,   _fx_cell),
+                Paragraph(r.layer,      _fx_cell),
+                status_pill,
+                Paragraph(r.message,    _fx_msg),
+            ]], colWidths=[35*mm, 25*mm, 25*mm, PAGE_W - 2*MARGIN - 85*mm])
+            fix_row.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), row_bg),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("LINEBELOW",     (0, 0), (-1, 0), 0.5, RULE_GREY),
+                ("LINEBEFORE",    (0, 0), (0, 0), 3, left_stripe),
+            ]))
+            story.append(fix_row)
+ 
+        if fixed_n > 0:
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(
+                f"<b>{fixed_n}</b> fix(es) applied directly to the server. "
+                "Run a new scan with <b>--compare-last</b> to verify the improvements.",
+                ParagraphStyle("fx_note", fontName="Helvetica", fontSize=8,
+                               textColor=PASS_GREEN, leading=12),
+            ))
  
     # ── SECURITY POSTURE HISTORY (drift vs previous scan) ──────────────────────
     if drift_report and not drift_report.is_first_scan:

@@ -628,8 +628,18 @@ def run_from_args(args: SimpleNamespace) -> None:
     if getattr(args, "patch", False):
         try:
             use_llm   = not getattr(args, "no_llm", False)
-            patch_dir = getattr(args, "patch_dir", "patches")
             verbose   = args.verbose
+ 
+            # Build a per-scan subfolder so each run is organised independently:
+            # patches/admin-example-com_20260330_scan13/
+            import re as _re
+            from datetime import datetime as _dt, timezone as _tz
+            _base_dir   = getattr(args, "patch_dir", "patches")
+            _target_slug = _re.sub(r"https?://", "", scan_result.target).split("/")[0]
+            _target_slug = _re.sub(r"[^a-zA-Z0-9-]", "-", _target_slug)[:30].strip("-")
+            _scan_date  = _dt.now(tz=_tz.utc).strftime("%Y%m%d")
+            _scan_num   = history.count(scan_result.target)
+            patch_dir   = f"{_base_dir}/{_target_slug}_{_scan_date}_scan{_scan_num}"
  
             # API key read from ANTHROPIC_API_KEY — never passed as CLI flag
             import os
@@ -725,6 +735,24 @@ def run_from_args(args: SimpleNamespace) -> None:
                         }
                         for p in patches
                     ]
+                if fix_results:
+                    result_dict["auto_fix"] = {
+                        "fixed":   sum(1 for r in fix_results if r.status == "fixed"),
+                        "failed":  sum(1 for r in fix_results if r.status == "failed"),
+                        "manual":  sum(1 for r in fix_results if r.status in ("skipped", "not_automatable")),
+                        "results": [
+                            {
+                                "check_id":     r.check_id,
+                                "check_name":   r.check_name,
+                                "layer":        r.layer,
+                                "status":       r.status,
+                                "message":      r.message,
+                                "commands_run": len(r.commands_run),
+                                "verified":     r.verified,
+                            }
+                            for r in fix_results
+                        ],
+                    }
                 json.dump(result_dict, f, indent=2)
             print(f"💾 JSON results written to: {args.json}")
         except Exception as e:
@@ -733,7 +761,7 @@ def run_from_args(args: SimpleNamespace) -> None:
     # ───────── PDF EXPORT ─────────
     if args.output:
         try:
-            generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches)
+            generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches, fix_results=fix_results)
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
             print(f"❌ Failed to generate PDF: {e!r}")
