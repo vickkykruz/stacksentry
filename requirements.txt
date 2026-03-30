@@ -4,4 +4,5 @@ paramiko==3.4.0
 PyYAML==6.0.1
 reportlab==4.2.2
 nginxparser_eb
-
+anthropic
+python-dotenv

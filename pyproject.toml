@@ -15,12 +15,14 @@ readme = "README.md"
 requires-python = ">=3.10"
  
 dependencies = [
-    "requests>=2.32.0",
+    "requests==2.31.0",
     "urllib3>=1.21.1,<2.1",
     "docker==7.0.0",
     "paramiko==3.4.0",
     "PyYAML==6.0.1",
     "reportlab==4.2.2",
+    "anthropic>=0.50.0",
+    "python-dotenv>=1.0.0",
 ]
  
 [project.optional-dependencies]
@@ -34,7 +36,7 @@ dev = [
 stacksentry = "sec_audit.cli:main"
  
 [tool.hatch.build.targets.wheel]
-packages = ["sec_audit", "checks", "scanners", "reporting", "storage"]
+packages = ["sec_audit", "checks", "scanners", "reporting", "storage", "remediation"]
  
 # ── Pytest configuration ──────────────────────────────────────────────────────
 [tool.pytest.ini_options]
