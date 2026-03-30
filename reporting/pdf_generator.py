@@ -211,7 +211,7 @@ def _grade_badge(scan_result: ScanResult, styles) -> Table:
  
  
 # ── Main generate function ────────────────────────────────────────────────────
-def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "generic", drift_report=None, simulation_result=None) -> None:
+def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "generic", drift_report=None, simulation_result=None, patch_results=None) -> None:
     """
     Generate a professional PDF security audit report from ScanResult.
  
@@ -1018,6 +1018,100 @@ def generate_pdf(scan_result: ScanResult, output_path: str, profile: str = "gene
         story.append(Paragraph(
             "No immediate remediation required. Maintain current configuration and monitor regularly.",
             no_rec_style,
+        ))
+ 
+    # ── GENERATED REMEDIATION PATCHES ───────────────────────────────────────
+    if patch_results:
+        story.append(Spacer(1, 14))
+        story.extend(_section("Generated Remediation Patches", styles))
+ 
+        _pr_hdr = ParagraphStyle("pr_hdr", fontName="Helvetica-Bold", fontSize=8,
+                                 textColor=colors.white, alignment=TA_CENTER)
+        _pr_cell = ParagraphStyle("pr_cell", fontName="Helvetica", fontSize=8,
+                                  textColor=TEXT_DARK, leading=11, wordWrap="CJK")
+        _pr_mono = ParagraphStyle("pr_mono", fontName="Helvetica", fontSize=7,
+                                  textColor=TEXT_MUTED, leading=10, wordWrap="CJK")
+ 
+        SOURCE_COLORS = {"AI-generated": ACCENT, "Standard": STEEL}
+ 
+        patch_header = Table([[
+            Paragraph("#",          _pr_hdr),
+            Paragraph("File",       _pr_hdr),
+            Paragraph("Check",      _pr_hdr),
+            Paragraph("Severity",   _pr_hdr),
+            Paragraph("Source",     _pr_hdr),
+            Paragraph("Apply",      _pr_hdr),
+        ]], colWidths=[10*mm, 50*mm, 32*mm, 22*mm, 22*mm, 34*mm])
+        patch_header.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), NAVY),
+            ("TOPPADDING",    (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(patch_header)
+ 
+        sev_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+        sorted_patches = sorted(
+            patch_results,
+            key=lambda p: sev_order.get(p.severity.upper(), 4),
+        )
+ 
+        for idx, p in enumerate(sorted_patches, 1):
+            row_bg = ROW_ALT if idx % 2 == 0 else colors.white
+            source_label = "AI-generated" if p.is_llm else "Standard"
+            source_color = SOURCE_COLORS.get(source_label, STEEL)
+ 
+            source_pill = Table(
+                [[Paragraph(source_label,
+                    ParagraphStyle("sp", fontName="Helvetica-Bold", fontSize=7,
+                                   textColor=colors.white, alignment=TA_CENTER))]],
+                colWidths=[22*mm],
+            )
+            source_pill.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), source_color),
+                ("TOPPADDING",    (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+            ]))
+ 
+            sev_color = {
+                "CRITICAL": colors.HexColor("#B71C1C"),
+                "HIGH": FAIL_RED, "MEDIUM": WARN_AMBER, "LOW": PASS_GREEN,
+            }.get(p.severity.upper(), STEEL)
+ 
+            patch_row = Table([[
+                Paragraph(str(idx), _pr_mono),
+                Paragraph(p.filename, _pr_mono),
+                Paragraph(p.check_id, _pr_cell),
+                Paragraph(p.severity, ParagraphStyle(
+                    "sev_p", fontName="Helvetica-Bold", fontSize=7,
+                    textColor=sev_color, alignment=TA_CENTER, leading=10)),
+                source_pill,
+                Paragraph(f"patches/{p.filename}", _pr_mono),
+            ]], colWidths=[10*mm, 50*mm, 32*mm, 22*mm, 22*mm, 34*mm])
+            patch_row.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), row_bg),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("LINEBELOW",     (0, 0), (-1, 0), 0.5, RULE_GREY),
+                ("LINEBEFORE",    (0, 0), (0, 0), 3, sev_color),
+            ]))
+            story.append(patch_row)
+ 
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            f"<b>{len(patch_results)}</b> patch file(s) written to the <b>patches/</b> folder. "
+            "Review each file then run with <b>--apply</b> to apply. "
+            "See <b>patches/README.md</b> for the recommended application order.",
+            ParagraphStyle("patch_note", fontName="Helvetica", fontSize=8,
+                           textColor=TEXT_MUTED, leading=12),
         ))
  
     # ── WHAT-IF SIMULATION RESULTS ───────────────────────────────────────────

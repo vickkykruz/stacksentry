@@ -81,9 +81,11 @@ class PatchGenerator:
         self,
         use_llm: bool = True,
         api_key: Optional[str] = None,
+        verbose: bool = False,
     ):
         self.use_llm = use_llm
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.verbose = verbose
  
     # ── Public API ────────────────────────────────────────────────────────────
  
@@ -138,6 +140,8 @@ class PatchGenerator:
  
         # ── Step 1: Try LLM ───────────────────────────────────────────────────
         if self.use_llm and self.api_key:
+            if self.verbose:
+                print(f"[DEBUG] Patch {check_id}: calling Claude API...")
             patch_data = generate_patch_with_llm(
                 check_id=check_id,
                 check_name=check_name,
@@ -150,13 +154,22 @@ class PatchGenerator:
             )
             if patch_data:
                 is_llm = True
+                if self.verbose:
+                    print(f"[DEBUG] Patch {check_id}: Claude AI generated {patch_data['filename']}")
+            else:
+                if self.verbose:
+                    print(f"[DEBUG] Patch {check_id}: LLM returned None — falling back to template")
  
         # ── Step 2: Static template fallback ─────────────────────────────────
         if not patch_data:
             patch_data = get_template(check_id, details=details, stack=stack)
+            if patch_data and self.verbose:
+                print(f"[DEBUG] Patch {check_id}: using static template → {patch_data['filename']}")
  
         # ── Step 3: Placeholder fallback ─────────────────────────────────────
         if not patch_data:
+            if self.verbose:
+                print(f"[DEBUG] Patch {check_id}: no template found — generating placeholder")
             patch_data = self._placeholder(check_id, check_name, layer,
                                             details, recommendation)
  
