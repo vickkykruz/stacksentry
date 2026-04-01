@@ -10,7 +10,11 @@ Supports:
 --json PATH           JSON export path
 """
  
- 
+import warnings
+from cryptography.utils import CryptographyDeprecationWarning
+warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
+
+
 # Uses argparse for CLI interface
 import json
 import time
@@ -65,6 +69,11 @@ from checks.host_checks import (
 from sec_audit.results import CheckResult, ScanResult
 from sec_audit.baseline import HARDENED_FLASK_BASELINE
 from reporting.pdf_generator import generate_pdf
+from sec_audit.telemetry import (
+    prompt_first_run, handle_telemetry_flag,
+    track_scan_started, track_patch_generated,
+    track_fix_applied, track_report_generated,
+)
 from storage.history import ScanHistory
 from remediation.generator import PatchGenerator
 from remediation.auto_fix import AutoFixer, AUTOMATABLE_CHECKS
@@ -123,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Core arguments
     parser.add_argument(
         "--target", "-t", 
-        required=True,
+        required=False,
         help="""
         Target web application URL.
         Examples: https://example.com, http://localhost:5000, https://staging.lms.internal
@@ -191,6 +200,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version="Security Audit Framework v1.0.0 (MSc Research Prototype)",
         help="Show version information"
+    )
+ 
+    parser.add_argument(
+        "--telemetry",
+        metavar="on|off|status",
+        help="Enable/disable anonymous usage telemetry (on | off | status).",
     )
     
     # ==================== POST-PROCESSING / PLANNING ====================
@@ -381,6 +396,15 @@ def _print_drift_report(drift_report, verbose: bool = False) -> None:
  
 def run_from_args(args: SimpleNamespace) -> None:
     """Execute scan based on parsed arguments."""
+ 
+    # ───────── TELEMETRY FLAG ─────────
+    if getattr(args, "telemetry", None):
+        handle_telemetry_flag(args.telemetry)
+        return
+ 
+    # ───────── FIRST RUN CONSENT ─────────
+    prompt_first_run()
+ 
     start = time.time()
  
     # ───────── --history: show timeline and exit (no scan needed) ─────────
@@ -424,6 +448,7 @@ def run_from_args(args: SimpleNamespace) -> None:
     # ───────── CREATE SCANNER ─────────
     if args.verbose:
         vprint(args.verbose, f"Creating HttpScanner for target {args.target!r}")
+    track_scan_started(args.mode)
     http_scanner = HttpScanner(args.target, timeout=10, scan_result=scan_result)
     
     # ───────── MODE FLAGS ─────────
@@ -660,6 +685,14 @@ def run_from_args(args: SimpleNamespace) -> None:
             llm_count  = sum(1 for p in patches if p.is_llm)
             tmpl_count = len(patches) - llm_count
  
+            track_patch_generated(
+                count=len(patches),
+                llm_count=sum(1 for p in patches if p.is_llm),
+            )
+            track_patch_generated(
+                count=len(patches),
+                llm_count=sum(1 for p in patches if p.is_llm),
+            )
             print(f"\n🔧 PATCH FILES GENERATED ({len(patches)} files → {patch_dir}/):")
             for p in patches:
                 source = "AI-generated" if p.is_llm else "standard"
@@ -713,6 +746,8 @@ def run_from_args(args: SimpleNamespace) -> None:
                 print(f"  {icon} [{r.severity if hasattr(r, 'severity') else r.layer.upper():<8}] "
                       f"{r.check_id:<25} {r.message}")
  
+            track_fix_applied(fixed=fixed_count, failed=failed_count, manual=skipped_count)
+            track_fix_applied(fixed=fixed_count, failed=failed_count, manual=skipped_count)
             print(f"\n  Fixed: {fixed_count}  |  Failed: {failed_count}  |  Manual: {skipped_count}")
             if fixed_count > 0:
                 print(f"  Run --compare-last to verify improvements on next scan.")
@@ -757,6 +792,8 @@ def run_from_args(args: SimpleNamespace) -> None:
                         ],
                     }
                 json.dump(result_dict, f, indent=2)
+            track_report_generated("json")
+            track_report_generated("json")
             print(f"💾 JSON results written to: {args.json}")
         except Exception as e:
             print(f"❌ Failed to write JSON: {e!r}")
@@ -765,6 +802,8 @@ def run_from_args(args: SimpleNamespace) -> None:
     if args.output:
         try:
             generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches, fix_results=fix_results)
+            track_report_generated("pdf")
+            track_report_generated("pdf")
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
             print(f"❌ Failed to generate PDF: {e!r}")
@@ -784,6 +823,23 @@ def main() -> None:
  
     parser = build_parser()
     args   = parser.parse_args()
+
+    # Handle standalone commands first — no target needed
+    if args.telemetry:
+        handle_telemetry_flag(args.telemetry)
+        return
+
+    if args.version:
+        print(f"StackSentry v{VERSION}")
+        return
+
+    if args.history:
+        # handle history
+        return
+
+    # All other commands require --target
+    if not args.target:
+        parser.error("--target is required for scanning")
  
     try:
         run_from_args(args)

@@ -102,17 +102,17 @@
       "id": "HOST-SSH-001",
       "layer": "host",
       "name": "SSH hardening",
-      "status": "FAIL",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "PermitRootLogin enabled: 'PermitRootLogin yes'. \u2192 Edit /etc/ssh/sshd_config \u2192 PermitRootLogin no \u2192 sudo systemctl restart ssh"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-FW-001",
       "layer": "host",
       "name": "Firewall enabled",
-      "status": "FAIL",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "ufw inactive. \u2192 sudo ufw enable && sudo ufw allow 22/tcp && sudo ufw status"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-SVC-001",
@@ -120,85 +120,85 @@
       "name": "Minimal services running",
       "status": "WARN",
       "severity": "MEDIUM",
-      "details": "34 services running. Review with: systemctl list-units"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-UPDATE-001",
       "layer": "host",
       "name": "Automatic updates configured",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "MEDIUM",
-      "details": "Unattended upgrades enabled \u2713"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-PERM-001",
       "layer": "host",
       "name": "Secure SSH file permissions",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "MEDIUM",
-      "details": "No world-writable files detected in /etc/ssh \u2713"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-LOG-001",
       "layer": "host",
       "name": "Logging service active",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "LOW",
-      "details": "rsyslog logging service active \u2713"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-SVC-GUNICORN",
       "layer": "host",
       "name": "Gunicorn runs as non-root",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "Gunicorn runs as non-root user 'www-data' \u2713"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-SVC-UWSGI",
       "layer": "host",
       "name": "uWSGI runs as non-root",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "uWSGI process not found (not in use) \u2713"
+      "details": "Authentication failed."
     },
     {
       "id": "HOST-SVC-MYSQL",
       "layer": "host",
       "name": "MySQL runs as non-root",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "MySQL process not found (not in use) \u2713"
+      "details": "Error reading SSH protocol banner"
     },
     {
       "id": "HOST-SVC-REDIS",
       "layer": "host",
       "name": "Redis runs as non-root",
-      "status": "PASS",
+      "status": "WARN",
       "severity": "HIGH",
-      "details": "Redis runs as non-root user 'redis' \u2713"
+      "details": "Authentication failed."
     }
   ],
   "summary": {
     "total_checks": 22,
     "grade": "F",
-    "score_percentage": 50.0,
+    "score_percentage": 18.2,
     "status_breakdown": {
-      "PASS": 11,
-      "WARN": 7,
-      "FAIL": 4
+      "PASS": 4,
+      "WARN": 16,
+      "FAIL": 2
     },
     "severity_breakdown": {
       "HIGH": 11,
       "MEDIUM": 8,
       "LOW": 3
     },
-    "high_risk_issues": 4
+    "high_risk_issues": 8
   },
   "score": {
-    "percentage": 50.0,
+    "percentage": 18.2,
     "grade": "F",
-    "pass_rate": "50.0%"
+    "pass_rate": "18.2%"
   },
   "stack_fingerprint": "Nginx",
   "attack_paths": [
@@ -241,241 +241,12 @@
     },
     "host": {
       "total": 10,
-      "passed": 7,
-      "failed": 3,
+      "passed": 0,
+      "failed": 10,
       "warned": 0,
-      "color": "\ud83d\udfe1",
-      "risk": "MEDIUM",
-      "pass_rate": 70.0
+      "color": "\ud83d\udd34",
+      "risk": "HIGH",
+      "pass_rate": 0.0
     }
-  },
-  "patches": [
-    {
-      "check_id": "APP-COOKIE-001",
-      "filename": "APP-COOKIE-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "HIGH",
-      "layer": "app",
-      "source": "AI-generated",
-      "instructions": "1. Save this script as APP-COOKIE-001.sh\n2. Make it executable: chmod +x APP-COOKIE-001.sh\n3. Run dry-run first to see changes: ./APP-COOKIE-001.sh --dry-run\n4. Apply the fix: sudo ./APP-COOKIE-001.sh --apply\n5. Verify cookies are now secure using browser dev tools or curl -v",
-      "verification": "curl -v https://your-domain.com/ 2>&1 | grep -i 'set-cookie' | grep -i 'secure\\|httponly\\|samesite'",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-COOKIE-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "APP-CSRF-001",
-      "filename": "APP-CSRF-001_admin-vickkykruzprogramming-dev_20260330.py",
-      "file_type": "python",
-      "severity": "MEDIUM",
-      "layer": "app",
-      "source": "standard",
-      "instructions": "For Flask: install flask-wtf and initialise CSRFProtect. For Django: ensure CsrfViewMiddleware is in MIDDLEWARE and {% csrf_token %} is in all POST forms.",
-      "verification": "curl -X POST https://your-app.com/login -d 'user=x' | grep -i '403\\|csrf'",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-CSRF-001_admin-vickkykruzprogramming-dev_20260330.py"
-    },
-    {
-      "check_id": "APP-ADMIN-001",
-      "filename": "APP-ADMIN-001_admin-vickkykruzprogramming-dev_20260330.conf",
-      "file_type": "nginx",
-      "severity": "MEDIUM",
-      "layer": "app",
-      "source": "AI-generated",
-      "instructions": "1. Save this patch as 'APP-ADMIN-001.conf' 2. Make it executable: chmod +x APP-ADMIN-001.conf 3. Run dry-run first: ./APP-ADMIN-001.conf 4. Review the changes that would be made 5. Apply the fix: ./APP-ADMIN-001.conf --apply 6. The script will automatically backup your config, test it, and reload nginx",
-      "verification": "curl -I http://localhost/admin && curl -I http://localhost/debug && curl -I http://localhost/test && curl -I http://localhost/wp-admin",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-ADMIN-001_admin-vickkykruzprogramming-dev_20260330.conf"
-    },
-    {
-      "check_id": "APP-RATE-001",
-      "filename": "APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.conf",
-      "file_type": "nginx",
-      "severity": "MEDIUM",
-      "layer": "app",
-      "source": "AI-generated",
-      "instructions": "1. Save this script to a file (e.g., fix-rate-limiting.sh)\n2. Make it executable: chmod +x fix-rate-limiting.sh\n3. Run in dry-run mode first: ./fix-rate-limiting.sh --dry-run\n4. Review the proposed changes\n5. Apply the changes: ./fix-rate-limiting.sh --apply\n6. Add the example server block rules to your specific server configurations\n7. Reload nginx: systemctl reload nginx",
-      "verification": "curl -I http://localhost && nginx -T | grep -A 5 'limit_req_zone'",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-RATE-001_admin-vickkykruzprogramming-dev_20260330.conf"
-    },
-    {
-      "check_id": "APP-PASS-001",
-      "filename": "APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.py",
-      "file_type": "python",
-      "severity": "LOW",
-      "layer": "app",
-      "source": "standard",
-      "instructions": "Add the validate_password function to your user registration and password change routes.",
-      "verification": "Test registration with a weak password like '123' \u2014 it should return a 400 error.",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\APP-PASS-001_admin-vickkykruzprogramming-dev_20260330.py"
-    },
-    {
-      "check_id": "WS-TLS-001",
-      "filename": "WS-TLS-001_admin-vickkykruzprogramming-dev_20260330.conf",
-      "file_type": "nginx",
-      "severity": "HIGH",
-      "layer": "webserver",
-      "source": "standard",
-      "instructions": "Add these directives to your nginx HTTPS server block. After applying, verify with SSL Labs: https://www.ssllabs.com/ssltest/analyze.html?d=your-domain.com",
-      "verification": "openssl s_client -connect your-domain.com:443 -tls1 2>&1 | grep 'handshake failure'",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-TLS-001_admin-vickkykruzprogramming-dev_20260330.conf"
-    },
-    {
-      "check_id": "WS-SRV-001",
-      "filename": "WS-SRV-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "MEDIUM",
-      "layer": "webserver",
-      "source": "AI-generated",
-      "instructions": "1. Save this script as WS-SRV-001.sh\n2. Make it executable: chmod +x WS-SRV-001.sh\n3. Run in dry-run mode first: ./WS-SRV-001.sh --dry-run\n4. Review the changes that would be made\n5. Apply the fix: sudo ./WS-SRV-001.sh --apply\n6. The script will automatically backup your config, test it, and reload nginx",
-      "verification": "curl -I http://localhost | grep -i server",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-SRV-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "WS-LIMIT-001",
-      "filename": "WS-LIMIT-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "LOW",
-      "layer": "webserver",
-      "source": "AI-generated",
-      "instructions": "1. Save this script as WS-LIMIT-001.sh\n2. Make it executable: chmod +x WS-LIMIT-001.sh\n3. Run in dry-run mode first: ./WS-LIMIT-001.sh\n4. Review the proposed changes\n5. Apply the fix: sudo ./WS-LIMIT-001.sh --apply\n6. Reload Nginx: sudo systemctl reload nginx",
-      "verification": "nginx -t && grep -r \"client_max_body_size\" /etc/nginx/",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\WS-LIMIT-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "HOST-SSH-001",
-      "filename": "HOST-SSH-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "HIGH",
-      "layer": "host",
-      "source": "AI-generated",
-      "instructions": "1. Save this script as HOST-SSH-001.sh\n2. Make it executable: chmod +x HOST-SSH-001.sh\n3. Run in dry-run mode first: sudo ./HOST-SSH-001.sh --dry-run\n4. Review the proposed changes\n5. Apply the fix: sudo ./HOST-SSH-001.sh --apply\n6. Verify SSH service is running and configuration is correct\n7. Test SSH access with non-root user before disconnecting",
-      "verification": "grep '^PermitRootLogin no' /etc/ssh/sshd_config && systemctl is-active ssh",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-SSH-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "HOST-FW-001",
-      "filename": "HOST-FW-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "HIGH",
-      "layer": "host",
-      "source": "standard",
-      "instructions": "Run `bash patches/HOST-FW-001.sh` for a dry run. Then `bash patches/HOST-FW-001.sh --apply` on the server. This opens ports 22, 80, and 443. Add any additional ports your application needs before running.",
-      "verification": "sudo ufw status verbose | grep -i 'status: active'",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-FW-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    },
-    {
-      "check_id": "HOST-SVC-001",
-      "filename": "HOST-SVC-001_admin-vickkykruzprogramming-dev_20260330.sh",
-      "file_type": "shell",
-      "severity": "MEDIUM",
-      "layer": "host",
-      "source": "AI-generated",
-      "instructions": "1. Download the script to your server\n2. Make it executable: chmod +x HOST-SVC-001.sh\n3. Run in dry-run mode first: ./HOST-SVC-001.sh --dry-run\n4. Review the output and services marked for disabling\n5. If satisfied, apply changes: ./HOST-SVC-001.sh --apply\n6. Reboot and test your Nginx web stack functionality\n7. If issues occur, use the restore commands shown in the output",
-      "verification": "systemctl list-units --type=service --state=running | wc -l",
-      "path": "patches\\admin-vickkykruzprogramming-de_20260330_scan16\\HOST-SVC-001_admin-vickkykruzprogramming-dev_20260330.sh"
-    }
-  ],
-  "auto_fix": {
-    "fixed": 1,
-    "failed": 4,
-    "manual": 6,
-    "results": [
-      {
-        "check_id": "APP-COOKIE-001",
-        "check_name": "Secure session cookies",
-        "layer": "app",
-        "status": "not_automatable",
-        "message": "Application code change \u2014 add SESSION_COOKIE_SECURE to app config.",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "APP-CSRF-001",
-        "check_name": "CSRF protection enabled",
-        "layer": "app",
-        "status": "not_automatable",
-        "message": "Application code change \u2014 install and configure CSRF middleware.",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "APP-ADMIN-001",
-        "check_name": "No exposed admin endpoints",
-        "layer": "app",
-        "status": "not_automatable",
-        "message": "Application code change \u2014 add authentication to admin routes.",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "APP-RATE-001",
-        "check_name": "Rate limiting configured",
-        "layer": "app",
-        "status": "not_automatable",
-        "message": "Application code change \u2014 install Flask-Limiter or similar.",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "APP-PASS-001",
-        "check_name": "Strong password policy",
-        "layer": "app",
-        "status": "not_automatable",
-        "message": "Application code change \u2014 add password validation to registration.",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "WS-TLS-001",
-        "check_name": "TLS 1.2+ with strong ciphers",
-        "layer": "webserver",
-        "status": "failed",
-        "message": "Validation failed: 2026/03/30 17:40:30 [emerg] 1909287#1909287: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
-        "commands_run": 4,
-        "verified": false
-      },
-      {
-        "check_id": "WS-SRV-001",
-        "check_name": "No server version disclosure",
-        "layer": "webserver",
-        "status": "failed",
-        "message": "Validation failed: 2026/03/30 17:40:33 [emerg] 1909341#1909341: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
-        "commands_run": 3,
-        "verified": false
-      },
-      {
-        "check_id": "WS-LIMIT-001",
-        "check_name": "Request size limits",
-        "layer": "webserver",
-        "status": "failed",
-        "message": "Validation failed: 2026/03/30 17:40:35 [emerg] 1909393#1909393: \"ssl_session_timeout\" directive is duplicate in /etc/letsencrypt/options-ssl-nginx.conf:8\nnginx: configuration file /etc/nginx/nginx.conf test failed",
-        "commands_run": 2,
-        "verified": false
-      },
-      {
-        "check_id": "HOST-SSH-001",
-        "check_name": "SSH hardening",
-        "layer": "host",
-        "status": "fixed",
-        "message": "Applied 7 command(s) successfully.",
-        "commands_run": 7,
-        "verified": false
-      },
-      {
-        "check_id": "HOST-FW-001",
-        "check_name": "Firewall enabled",
-        "layer": "host",
-        "status": "failed",
-        "message": "SSH error: AuthenticationException('Authentication failed.')",
-        "commands_run": 0,
-        "verified": false
-      },
-      {
-        "check_id": "HOST-SVC-001",
-        "check_name": "Minimal services running",
-        "layer": "host",
-        "status": "skipped",
-        "message": "No automated fix available for this check.",
-        "commands_run": 0,
-        "verified": false
-      }
-    ]
   }
 }
