@@ -867,7 +867,7 @@ def run_from_args(args: SimpleNamespace) -> None:
     # ───────── PDF EXPORT ─────────
     if args.output:
         try:
-            generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches, fix_results=fix_results)
+            generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches, fix_results=fix_results, dry_run=dry_run)
             track_report_generated("pdf")
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
