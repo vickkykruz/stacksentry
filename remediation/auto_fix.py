@@ -309,6 +309,7 @@ class AutoFixer:
         nginx_conf:   Optional[str] = None,
         verbose:      bool = False,
         timeout:      int  = 30,
+        dry_run:      bool = False,
     ):
         self.ssh_host     = ssh_host
         self.ssh_user     = ssh_user
@@ -319,6 +320,7 @@ class AutoFixer:
         self.nginx_conf   = nginx_conf
         self.verbose      = verbose
         self.timeout      = timeout
+        self.dry_run      = dry_run
         self._stack_fingerprint = ""  # set by fix_all from scan_result
  
     def fix_all(self, scan_result) -> list[FixResult]:
@@ -337,7 +339,8 @@ class AutoFixer:
             return (3, 5)
  
         ordered = sorted(failing, key=_key)
-        shared  = self._open_ssh_client() if self.ssh_host else None
+        # No SSH connection needed in dry-run — nothing is executed
+        shared  = self._open_ssh_client() if (self.ssh_host and not self.dry_run) else None
         results = []
  
         for check in ordered:
@@ -377,24 +380,39 @@ class AutoFixer:
     def _fix_one(self, check_id: str, check_name: str, layer: str,
                  shared_client=None) -> FixResult:
  
+        # APP layer — always manual, but show framework-specific snippet
         if check_id in NOT_AUTOMATABLE and layer == "app":
-            # Path B: generate framework-specific snippet alongside the manual message
-            snippet = self._app_snippet(check_id)
+            snippet  = self._app_snippet(check_id)
             base_msg = NOT_AUTOMATABLE[check_id]
-            if snippet:
-                msg = f"{base_msg}\n\n  📋 Copy-paste fix for your stack:\n{snippet}"
-            else:
-                msg = base_msg
+            msg = f"{base_msg}\n\n  📋 Copy-paste fix for your stack:\n{snippet}" if snippet else base_msg
             return FixResult(check_id, check_name, layer, "not_automatable", msg)
  
+        # SSH-based fix (HOST + WS layer)
         if self.ssh_host and check_id in FIX_REGISTRY:
-            return self._execute_fix(check_id, check_name, layer,
-                                     FIX_REGISTRY[check_id](), shared_client)
+            commands = FIX_REGISTRY[check_id]()
+            if self.dry_run:
+                # Show what WOULD run without executing
+                return FixResult(
+                    check_id=check_id, check_name=check_name, layer=layer,
+                    status="would_fix",
+                    message=f"Would run {len(commands)} SSH command(s) on {self.ssh_host}",
+                    commands_run=commands,
+                )
+            return self._execute_fix(check_id, check_name, layer, commands, shared_client)
  
+        # File-based fix (--dockerfile / --compose-file / --nginx-conf)
         if check_id in FILE_FIXABLE:
             attr, method_name = FILE_FIXABLE[check_id]
             file_path = getattr(self, attr, None)
             if file_path:
+                if self.dry_run:
+                    # Show what WOULD be edited without touching the file
+                    return FixResult(
+                        check_id=check_id, check_name=check_name, layer=layer,
+                        status="would_fix",
+                        message=f"Would edit {file_path} (backup created, {check_id} directives added)",
+                        commands_run=[f"edit {file_path}"],
+                    )
                 method = getattr(self, method_name, None)
                 if method:
                     return method(file_path, check_id, check_name)
@@ -403,12 +421,14 @@ class AutoFixer:
             return FixResult(check_id, check_name, layer, "skipped",
                              f"Provide {flag} to auto-fix, or --ssh-host to fix on server.")
  
+        # Other not_automatable entries (CONT secrets, HOST service users)
         if check_id in NOT_AUTOMATABLE:
             return FixResult(check_id, check_name, layer, "not_automatable",
                              NOT_AUTOMATABLE[check_id])
  
         return FixResult(check_id, check_name, layer, "skipped",
                          "No automated fix available for this check.")
+ 
  
     def _execute_fix(self, check_id, check_name, layer, commands,
                      shared_client=None) -> FixResult:
@@ -636,3 +656,4 @@ class AutoFixer:
 # ── Public registry ───────────────────────────────────────────────────────────
  
 AUTOMATABLE_CHECKS = set(FIX_REGISTRY.keys()) | set(FILE_FIXABLE.keys())
+ 

@@ -111,21 +111,51 @@ def build_parser() -> argparse.ArgumentParser:
         🚀 USAGE EXAMPLES:
  
             BASIC SCAN (HTTP only):
-            python sec_audit.py --target https://example.com
+            stacksentry --target https://example.com
  
-            FULL STACK SCAN (HTTP + Docker + SSH):
-            python sec_audit.py --target https://lms.example.com --mode full --output report.pdf
+            FULL STACK SCAN (all 4 layers):
+            stacksentry --target https://example.com --mode full \
+              --ssh-host 1.2.3.4 --ssh-user root --ssh-password yourpass \
+              --output report.pdf
  
-            DEVELOPMENT / LOCAL:
-            python sec_audit.py --target http://localhost:5000 --json results.json
+            WITH AI-POWERED FIX SCRIPTS:
+            stacksentry --target https://example.com --mode full --patch \
+              --ssh-host 1.2.3.4 --ssh-password yourpass
+ 
+            AUTO-FIX (applies fixes directly on server):
+            stacksentry --target https://example.com --mode full --fix \
+              --ssh-host 1.2.3.4 --ssh-password yourpass \
+              --dockerfile ./Dockerfile --compose-file ./docker-compose.yml
+ 
+            TRACK POSTURE OVER TIME:
+            stacksentry --target https://example.com --compare-last
+            stacksentry --target https://example.com --history
+ 
+            WHAT-IF SIMULATION:
+            stacksentry --target https://example.com \
+              --simulate APP-DEBUG-001,WS-HSTS-001,HOST-SSH-001
  
             CI/CD PIPELINE:
-            python sec_audit.py --target $APP_URL --json /tmp/audit.json --mode quick
+            stacksentry --target $APP_URL --json /tmp/audit.json --mode quick --no-save
+ 
+            STATIC FILE ANALYSIS (no live server needed):
+            stacksentry --target https://example.com \
+              --nginx-conf /etc/nginx/nginx.conf \
+              --dockerfile ./Dockerfile \
+              --compose-file ./docker-compose.yml
+ 
+            DISABLE AI / USE TEMPLATES ONLY:
+            stacksentry --target https://example.com --patch --no-llm
+ 
+            MANAGE TELEMETRY:
+            stacksentry --telemetry status
+            stacksentry --telemetry off
  
             📄 Output Formats:
-            --output report.pdf    → Professional PDF remediation report
-            --json results.json    → Structured JSON for automation
-            (stdout)               → Console summary (default)
+            --output report.pdf    → Professional PDF report (OWASP, hardening plan)
+            --json results.json    → Structured JSON for automation/CI
+            --patch                → AI fix scripts in patches/{target}_{date}_scan{N}/
+            (stdout)               → Console summary with grade (default)
         """
     )
     
@@ -302,6 +332,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
  
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Preview every command that WOULD run with --fix, without "
+            "executing anything. Review the plan then run without --dry-run "
+            "to apply. Nothing is changed on the server or files."
+        ),
+    )
+ 
     return parser
  
  
@@ -401,6 +441,9 @@ def run_from_args(args: SimpleNamespace) -> None:
     if getattr(args, "telemetry", None):
         handle_telemetry_flag(args.telemetry)
         return
+ 
+    # ───────── FIRST RUN CONSENT ─────────
+    prompt_first_run()
  
     start = time.time()
  
@@ -686,6 +729,10 @@ def run_from_args(args: SimpleNamespace) -> None:
                 count=len(patches),
                 llm_count=sum(1 for p in patches if p.is_llm),
             )
+            track_patch_generated(
+                count=len(patches),
+                llm_count=sum(1 for p in patches if p.is_llm),
+            )
             print(f"\n🔧 PATCH FILES GENERATED ({len(patches)} files → {patch_dir}/):")
             for p in patches:
                 source = "AI-generated" if p.is_llm else "standard"
@@ -698,20 +745,32 @@ def run_from_args(args: SimpleNamespace) -> None:
             patches = []
             print(f"❌ Patch generation failed: {e!r}")
  
-    # ───────── AUTO-FIX (--fix) ─────────
+        # ───────── AUTO-FIX (--fix) ─────────
     fix_results = []
+    dry_run = getattr(args, "dry_run", False)
+ 
     if getattr(args, "fix", False):
-        if not args.ssh_host:
-            print("⚠️  --fix requires --ssh-host to be set. Skipping auto-fix.")
+        if not args.ssh_host and not any([
+            getattr(args, "dockerfile", None),
+            getattr(args, "compose_file", None),
+            getattr(args, "nginx_conf", None),
+        ]):
+            print("\u26a0\ufe0f  --fix requires --ssh-host or a file flag "
+                  "(--dockerfile / --compose-file / --nginx-conf).")
         else:
-            print("\n🔧 AUTO-FIX — applying fixes via SSH...")
             from sec_audit.results import Status
-            failing = [c for c in scan_result.checks if c.status != Status.PASS]
+            failing     = [c for c in scan_result.checks if c.status != Status.PASS]
             automatable = [c for c in failing if c.id in AUTOMATABLE_CHECKS]
             not_auto    = [c for c in failing if c.id not in AUTOMATABLE_CHECKS]
  
-            if automatable:
-                print(f"  {len(automatable)} check(s) will be fixed automatically")
+            if dry_run:
+                print("\n\U0001f50d DRY-RUN \u2014 no changes will be made to the server or files.")
+                print("   Review the plan below, then run without --dry-run to apply.\n")
+                print("\u2500" * 60)
+            else:
+                print("\n\U0001f527 AUTO-FIX \u2014 applying fixes...")
+ 
+            print(f"  {len(automatable)} check(s) will be fixed automatically")
             if not_auto:
                 print(f"  {len(not_auto)} check(s) require manual action (APP/CONT layer)")
             print()
@@ -725,27 +784,50 @@ def run_from_args(args: SimpleNamespace) -> None:
                 compose_file=getattr(args, "compose_file", None),
                 nginx_conf=getattr(args, "nginx_conf", None),
                 verbose=args.verbose,
+                dry_run=dry_run,
             )
             fix_results = fixer.fix_all(scan_result)
  
-            fixed_count   = sum(1 for r in fix_results if r.status == "fixed")
+            fixed_count   = sum(1 for r in fix_results if r.status in ("fixed", "would_fix"))
             failed_count  = sum(1 for r in fix_results if r.status == "failed")
             skipped_count = sum(1 for r in fix_results if r.status in ("skipped", "not_automatable"))
  
-            print("\n📊 AUTO-FIX RESULTS:")
-            for r in fix_results:
-                icon = {"fixed": "✅", "failed": "❌", "skipped": "⏭️",
-                        "not_automatable": "📋"}.get(r.status, "?")
-                print(f"  {icon} [{r.severity if hasattr(r, 'severity') else r.layer.upper():<8}] "
-                      f"{r.check_id:<25} {r.message}")
+            if dry_run:
+                print("\U0001f4cb DRY-RUN PLAN \u2014 commands that WOULD run:\n")
+            else:
+                print("\n\U0001f4ca AUTO-FIX RESULTS:")
  
-            track_fix_applied(fixed=fixed_count, failed=failed_count, manual=skipped_count)
-            print(f"\n  Fixed: {fixed_count}  |  Failed: {failed_count}  |  Manual: {skipped_count}")
-            if fixed_count > 0:
-                print(f"  Run --compare-last to verify improvements on next scan.")
+            for r in fix_results:
+                if dry_run:
+                    icon = {"would_fix": "\U0001f527", "skipped": "\u23ed\ufe0f",
+                            "not_automatable": "\U0001f4cb", "failed": "\u274c"}.get(r.status, "?")
+                else:
+                    icon = {"fixed": "\u2705", "failed": "\u274c", "skipped": "\u23ed\ufe0f",
+                            "not_automatable": "\U0001f4cb"}.get(r.status, "?")
+ 
+                layer_label = r.layer.upper() if hasattr(r, "layer") else "?"
+                print(f"  {icon} [{layer_label:<8}] {r.check_id:<25} {r.message}")
+ 
+                # In dry-run, show each command that would run
+                if dry_run and r.status == "would_fix" and r.commands_run:
+                    for cmd in r.commands_run:
+                        print(f"           $ {cmd[:72]}{'...' if len(cmd) > 72 else ''}")
+                    print()
+ 
+            if dry_run:
+                print("\u2500" * 60)
+                print(f"\n  Would fix: {fixed_count}  |  Manual: {skipped_count}")
+                print()
+                print("  \u2705 Review complete. To apply these fixes, run the same")
+                print("     command without --dry-run.")
+            else:
+                track_fix_applied(fixed=fixed_count, failed=failed_count, manual=skipped_count)
+                print(f"\n  Fixed: {fixed_count}  |  Failed: {failed_count}  |  Manual: {skipped_count}")
+                if fixed_count > 0:
+                    print("  Run --compare-last to verify improvements on next scan.")
             print()
  
-    # ───────── JSON EXPORT ─────────
+# ───────── JSON EXPORT ─────────
     if args.json:
         try:
             with open(args.json, "w", encoding="utf-8") as f:
@@ -785,6 +867,7 @@ def run_from_args(args: SimpleNamespace) -> None:
                     }
                 json.dump(result_dict, f, indent=2)
             track_report_generated("json")
+            track_report_generated("json")
             print(f"💾 JSON results written to: {args.json}")
         except Exception as e:
             print(f"❌ Failed to write JSON: {e!r}")
@@ -793,6 +876,7 @@ def run_from_args(args: SimpleNamespace) -> None:
     if args.output:
         try:
             generate_pdf(scan_result, args.output, profile=args.profile, drift_report=drift_report, simulation_result=sim_result, patch_results=patches, fix_results=fix_results)
+            track_report_generated("pdf")
             track_report_generated("pdf")
             print(f"📄 PDF report generated: {args.output}")
         except Exception as e:
@@ -817,11 +901,25 @@ def main() -> None:
     parser = build_parser()
     args   = parser.parse_args()
  
-    # Run the scan — run_from_args handles --telemetry, --history, and --target validation
+    # Handle standalone commands first — no target needed
+    if args.telemetry:
+        handle_telemetry_flag(args.telemetry)
+        return
+ 
+    if args.version:
+        print(f"StackSentry v{VERSION}")
+        return
+ 
+    if args.history:
+        # handle history
+        return
+ 
+    # All other commands require --target
+    if not args.target:
+        parser.error("--target is required for scanning")
+ 
     try:
         run_from_args(args)
-    except SystemExit:
-        raise  # let argparse --help and --version exit cleanly
     except KeyboardInterrupt:
         print("\n[INFO] Scan interrupted.")
     except EOFError:
@@ -830,4 +928,3 @@ def main() -> None:
  
 if __name__ == "__main__":
     main()
-    
