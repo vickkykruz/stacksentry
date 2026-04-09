@@ -191,43 +191,77 @@ def check_server_tokens(http_scanner: HttpScanner, verbose: bool = False) -> Che
     
     
 def check_directory_listing(http_scanner: HttpScanner, verbose: bool = False) -> CheckResult:
-    """WS-DIR-001: Directory listing disabled."""
+    """WS-DIR-001: Directory listing disabled.
+ 
+    Content-based detection — a 200 status alone never triggers FAIL.
+    Aborts path scanning early after 2 consecutive timeouts.
+    """
     meta = _meta("WS-DIR-001")
-    test_paths = ["/", "/static/", "/uploads/", "/images/"]
-    
+    test_paths = ["/", "/static/", "/uploads/", "/images/", "/files/", "/media/"]
+ 
+    DIR_SIGNATURES = [
+        "index of /",
+        "directory listing for",
+        "<title>/</title>",
+        "parent directory</a>",
+        "[to parent directory]",
+    ]
+ 
     try:
-        exposed_dirs = []
+        import requests as _req
+        exposed_dirs       = []
+        consecutive_timeouts = 0
+ 
         for path in test_paths:
+            if consecutive_timeouts >= 2:
+                if verbose:
+                    print(f"[DEBUG] WS-DIR-001: 2 consecutive timeouts — server blocking, stopping early")
+                break
+ 
             url = f"{getattr(http_scanner, 'scan_root', http_scanner.base_url).rstrip('/')}{path}"
-            
             try:
                 if verbose:
                     print(f"[DEBUG] WS-DIR-001: GET {url}")
                 resp = http_scanner.session.get(url, timeout=3)
+                consecutive_timeouts = 0
+                body_lower = resp.text.lower()
                 if verbose:
                     print(f"[DEBUG] WS-DIR-001: {path} status={resp.status_code}, body_len={len(resp.text)}")
-                if resp.status_code == 200 and "index of" in resp.text.lower():
-                    exposed_dirs.append(path)
+ 
+                if resp.status_code == 200:
+                    matched = [sig for sig in DIR_SIGNATURES if sig in body_lower]
+                    if matched:
+                        exposed_dirs.append(path)
+                        if verbose:
+                            print(f"[DEBUG] WS-DIR-001: {path} confirmed: {matched}")
+            except (_req.exceptions.Timeout,
+                    _req.exceptions.ConnectTimeout,
+                    _req.exceptions.ReadTimeout) as e:
+                consecutive_timeouts += 1
+                if verbose:
+                    print(f"[DEBUG] WS-DIR-001: timeout {consecutive_timeouts}/2 on {path}")
+                continue
             except Exception as e:
                 if verbose:
                     print(f"[DEBUG] WS-DIR-001: exception on {path}: {e!r}")
                 continue
-        
-        status = Status.FAIL if exposed_dirs else Status.PASS
-        details = f"Directory listing {'found: ' + ', '.join(exposed_dirs) if exposed_dirs else 'disabled'}"
-        
+ 
+        status  = Status.FAIL if exposed_dirs else Status.PASS
+        details = (f"Directory listing exposed: {', '.join(exposed_dirs)}"
+                   if exposed_dirs else "Directory listing disabled on tested paths.")
+ 
     except Exception as e:
         if verbose:
             print(f"[DEBUG] WS-DIR-001: exception {e!r}")
-        status = Status.ERROR
+        status  = Status.ERROR
         details = f"Directory listing check failed: {e!r}"
-    
+ 
     return CheckResult(
         id=meta["id"], layer=meta["layer"], name=meta["name"],
         status=status, severity=Severity[meta["severity"]], details=details
     )
-    
-    
+ 
+ 
 def check_request_limits(http_scanner: HttpScanner, verbose: bool = False) -> CheckResult:
     """WS-LIMIT-001: Request size limits."""
     meta = _meta("WS-LIMIT-001")
@@ -341,4 +375,4 @@ def check_nginx_csp_config(path: Optional[str] = None, verbose: bool = False) ->
         id=meta["id"], layer=meta["layer"], name=meta["name"],
         status=status, severity=Severity[meta["severity"]], details=details
     )
-    
+  
