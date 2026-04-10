@@ -103,21 +103,32 @@ def _hsts_commands() -> list[str]:
  
  
 def _tls_commands() -> list[str]:
-    """WS-TLS-001: TLS 1.2+ — safe alongside Let's Encrypt (no conflicting directives)."""
+    """WS-TLS-001: TLS 1.2+ hardening.
+ 
+    ssl_prefer_server_ciphers is intentionally omitted from this snippet.
+    Let's Encrypt sets it in options-ssl-nginx.conf. Including it here
+    causes nginx 'duplicate directive' errors on LE-managed servers.
+    ssl_protocols and ssl_ciphers are safe to set alongside LE.
+    """
     return [
         "mkdir -p /etc/nginx/snippets",
-        "printf '# StackSentry TLS\\nssl_protocols TLSv1.2 TLSv1.3;\\n"
-        "ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;\\n"
-        "ssl_prefer_server_ciphers off;\\n'"
-        " > /etc/nginx/snippets/stacksentry-tls.conf",
-        "grep -r 'stacksentry-tls' /etc/nginx/ > /dev/null 2>&1 || "
-        "(SITE=$(ls /etc/nginx/sites-enabled/ 2>/dev/null | head -1) && "
-        "[ -n \"$SITE\" ] && "
-        "sed -i '/listen 443/a\\    include snippets/stacksentry-tls.conf;' "
-        "\"/etc/nginx/sites-enabled/$SITE\")",
+        (
+            "[ -f /etc/nginx/snippets/stacksentry-tls.conf ] || "
+            "printf '# StackSentry TLS\\nssl_protocols TLSv1.2 TLSv1.3;\\n"
+            "ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;\\n'"
+            " > /etc/nginx/snippets/stacksentry-tls.conf"
+        ),
+        (
+            "grep -r 'stacksentry-tls' /etc/nginx/ > /dev/null 2>&1 || "
+            "(SITE=$(ls /etc/nginx/sites-enabled/ 2>/dev/null | head -1) && "
+            '[ -n \"$SITE\" ] && '
+            "sed -i '/listen 443/a\\    include snippets/stacksentry-tls.conf;' "
+            '\"/etc/nginx/sites-enabled/$SITE\")'
+        ),
         "nginx -t",
         "systemctl reload nginx || service nginx reload",
     ]
+ 
  
  
 def _dir_listing_commands() -> list[str]:
@@ -358,13 +369,15 @@ class AutoFixer:
         self.verbose      = verbose
         self.timeout      = timeout
         self.dry_run      = dry_run
-        self._stack_fingerprint = ""  # set by fix_all from scan_result
+        self._stack_fingerprint  = ""  # set by fix_all from scan_result
+        self._nginx_config_broken = False  # set True when nginx -t fails
  
     def fix_all(self, scan_result) -> list[FixResult]:
         from sec_audit.results import Status
         failing = [c for c in scan_result.checks if c.status != Status.PASS]
         # Store stack fingerprint for framework-specific APP snippets
-        self._stack_fingerprint = getattr(scan_result, "stack_fingerprint", "")
+        self._stack_fingerprint   = getattr(scan_result, "stack_fingerprint", "")
+        self._nginx_config_broken = False  # reset for each new fix session
  
         PRIORITY = {"HOST-FW-001": 0, "HOST-SSH-001": 90}
  
@@ -384,9 +397,16 @@ class AutoFixer:
             result = self._fix_one(check.id, check.name, check.layer,
                                    shared_client=shared)
             results.append(result)
-            if self.verbose:
-                icon = {"fixed": "✅", "failed": "❌", "skipped": "⏭️",
-                        "not_automatable": "📋"}.get(result.status, "?")
+            # In dry-run mode, cli.py prints the full formatted plan — suppress
+            # the per-item verbose output here to avoid printing everything twice.
+            if self.verbose and not self.dry_run:
+                icon = {
+                    "fixed":           "✅",
+                    "failed":          "❌",
+                    "skipped":         "⏭️",
+                    "not_automatable": "📋",
+                    "would_fix":       "🔧",
+                }.get(result.status, "?")
                 print(f"  {icon} {check.id}: {result.message}")
  
         if shared:
@@ -438,9 +458,16 @@ class AutoFixer:
             import paramiko
             from io import StringIO
  
-            if v: print("[DEBUG] HOST-SSH-001: generating Ed25519 key pair")
-            # Generate Ed25519 key pair
-            key = paramiko.Ed25519Key.generate()
+            if v: print("[DEBUG] HOST-SSH-001: generating SSH key pair")
+            # Ed25519 preferred (paramiko >= 3.0), RSA 4096 fallback for older versions
+            key_type = "Ed25519"
+            try:
+                key = paramiko.Ed25519Key.generate()
+            except AttributeError:
+                key_type = "RSA-4096"
+                key = paramiko.RSAKey.generate(bits=4096)
+                if v: print("[DEBUG] HOST-SSH-001: Ed25519 unavailable — using RSA 4096")
+ 
  
             # Build paths
             stamp     = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -455,7 +482,8 @@ class AutoFixer:
             _secure_key_file(key_path)
  
             # Save public key in OpenSSH format
-            pub_key_str = f"ssh-ed25519 {key.get_base64()} stacksentry-generated"
+            key_prefix  = "ssh-ed25519" if key_type == "Ed25519" else "ssh-rsa"
+            pub_key_str = f"{key_prefix} {key.get_base64()} stacksentry-generated"
             pub_path.write_text(pub_key_str + "\n")
  
             if v: print(f"[DEBUG] HOST-SSH-001: saving private key to {key_path}")
@@ -591,6 +619,17 @@ class AutoFixer:
  
         # SSH-based fix (HOST + WS layer)
         if self.ssh_host and check_id in FIX_REGISTRY:
+            # If a previous nginx fix broke the config, skip further nginx fixes
+            # and explain the real cause so the user is not confused
+            if self._nginx_config_broken and layer == "webserver":
+                return FixResult(
+                    check_id=check_id, check_name=check_name, layer=layer,
+                    status="skipped",
+                    message=(
+                        "Skipped — nginx config is invalid from a previous fix in this session. "
+                        "Fix the nginx config manually (nginx -t) then re-run --fix."
+                    ),
+                )
             commands = FIX_REGISTRY[check_id]()
             if self.dry_run:
                 # HOST-SSH-001 gets a prominent warning about auth method change
@@ -679,6 +718,8 @@ class AutoFixer:
                 executed.append(cmd)
                 if any(v in cmd for v in ["sshd -t", "nginx -t"]) and rc != 0:
                     e = err.read().decode().strip()
+                    if "nginx -t" in cmd:
+                        self._nginx_config_broken = True  # block subsequent nginx fixes
                     if own:
                         try: client.close()
                         except Exception: pass
