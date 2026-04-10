@@ -443,7 +443,7 @@ class AutoFixer:
             key = paramiko.Ed25519Key.generate()
  
             # Build paths
-            stamp     = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            stamp     = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             host_slug = (self.ssh_host or "server").replace(".", "-").replace(":", "-")
             key_path  = self._key_store_dir() / f"{host_slug}_{stamp}.pem"
             pub_path  = self._key_store_dir() / f"{host_slug}_{stamp}.pub"
@@ -526,7 +526,7 @@ class AutoFixer:
         if self.ssh_key:
             return "Would apply PermitRootLogin prohibit-password (SSH key already configured)."
  
-        stamp     = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+        stamp     = datetime.now(timezone.utc).strftime("%Y%m%d")
         host_slug = (self.ssh_host or "server").replace(".", "-").replace(":", "-")
         key_dir   = self._key_store_dir()
         key_name  = f"{host_slug}_{stamp}.pem"
