@@ -105,15 +105,16 @@ def _hsts_commands() -> list[str]:
 def _tls_commands() -> list[str]:
     """WS-TLS-001: TLS 1.2+ hardening.
  
-    ssl_prefer_server_ciphers is intentionally omitted from this snippet.
-    Let's Encrypt sets it in options-ssl-nginx.conf. Including it here
-    causes nginx 'duplicate directive' errors on LE-managed servers.
-    ssl_protocols and ssl_ciphers are safe to set alongside LE.
+    ssl_prefer_server_ciphers is intentionally omitted — Let's Encrypt
+    already sets it. Including it causes nginx duplicate directive errors.
+ 
+    Always overwrites the snippet file so stale versions from previous
+    runs (that may have included ssl_prefer_server_ciphers) are replaced.
     """
     return [
         "mkdir -p /etc/nginx/snippets",
         (
-            "[ -f /etc/nginx/snippets/stacksentry-tls.conf ] || "
+            # Always overwrite — ensures stale/broken previous versions are replaced
             "printf '# StackSentry TLS\\nssl_protocols TLSv1.2 TLSv1.3;\\n"
             "ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;\\n'"
             " > /etc/nginx/snippets/stacksentry-tls.conf"
@@ -121,9 +122,9 @@ def _tls_commands() -> list[str]:
         (
             "grep -r 'stacksentry-tls' /etc/nginx/ > /dev/null 2>&1 || "
             "(SITE=$(ls /etc/nginx/sites-enabled/ 2>/dev/null | head -1) && "
-            '[ -n \"$SITE\" ] && '
+            '[ -n \"\" ] && '
             "sed -i '/listen 443/a\\    include snippets/stacksentry-tls.conf;' "
-            '\"/etc/nginx/sites-enabled/$SITE\")'
+            '\"/etc/nginx/sites-enabled/\")'
         ),
         "nginx -t",
         "systemctl reload nginx || service nginx reload",
