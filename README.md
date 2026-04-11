@@ -2,20 +2,20 @@
  
 **Automated web application security assessment, AI-powered remediation, and auto-fix.**
  
-[![Tests](https://img.shields.io/badge/tests-316%20passing-brightgreen)](https://github.com/stacksentry/stacksentry)
+[![Tests](https://img.shields.io/badge/tests-321%20passing-brightgreen)](https://github.com/vickkykruz/stacksentry)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/stacksentry/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![PyPI](https://img.shields.io/badge/pypi-v1.0.0-orange)](https://pypi.org/project/stacksentry/)
  
-StackSentry scans your web application stack — Flask/Django app, Nginx/Apache, Docker containers, and Linux host — assigns a security grade, generates AI-powered fix scripts, and can apply fixes automatically via SSH or directly to your config files.
+StackSentry scans your web application stack — Flask/Django/PHP app, Nginx/Apache webserver, Docker containers, and Linux host — assigns a security grade, generates AI-powered fix scripts, and can apply fixes automatically via SSH or directly to your config files.
  
 ---
  
 ## What it does
  
 ```bash
-stacksentry --target https://your-app.com --mode full --patch --fix \
-  --ssh-host your-server-ip --ssh-user root \
+stacksentry -t https://your-app.com --mode full --patch --fix \
+  --ssh-host your-server-ip --ssh-user root --ssh-key ~/.ssh/id_ed25519 \
   --dockerfile ./Dockerfile \
   --compose-file ./docker-compose.yml
 ```
@@ -27,9 +27,25 @@ In one command, StackSentry:
 - Generates a **professional PDF report** with OWASP Top 5 mapping
 - Creates **AI-powered fix scripts** organised per scan in `patches/`
 - **Auto-applies fixes** via SSH (HOST + WS) or directly to your config files (CONT + WS)
-- Prints **framework-specific code snippets** for APP layer checks (Flask/Django)
+- **Generates and installs SSH keys** before applying `prohibit-password` — so you are never locked out
+- Prints **stack-aware code snippets** for APP layer checks (Flask, Django, Laravel, vanilla PHP)
 - Tracks **posture drift** — shows what regressed or improved since last scan
 - Simulates **what-if scenarios** — projects your grade after specific fixes
+- Detects **PHP/Apache/shared hosting** stacks automatically and adjusts checks accordingly
+ 
+---
+ 
+## Real-world results
+ 
+StackSentry was tested against three live applications during development:
+ 
+| Target | Stack | Before | After auto-fix | Checks fixed |
+|---|---|---|---|---|
+| `admin.vickkykruzprogramming.dev` | nginx/Ubuntu VPS | F (16.7%) | **C (72.7%)** | HSTS, security headers, server token, TLS, request limits, SSH hardening |
+| `bblearn.londonmet.ac.uk` | Unknown/SPA (Blackboard LMS) | D (66.7%) | — (no SSH) | Scan only — CSRF PASS, admin WARN (login wall detected) |
+| `sacoeteccscdept.com.ng` | PHP/Apache/shared hosting | F (27.3%) | — (no SSH) | Scan only — stack correctly detected from URL alone |
+ 
+The VPS went from **F (16.7%) to C (72.7%)** with **0 attack paths** after auto-fix.
  
 ---
  
@@ -39,23 +55,35 @@ In one command, StackSentry:
 pip install stacksentry
  
 # Basic HTTP scan
-stacksentry --target https://your-app.com
+stacksentry -t https://your-app.com
  
 # Full stack scan with PDF report
-stacksentry --target https://your-app.com --mode full \
+stacksentry -t https://your-app.com --mode full \
   --ssh-host your-server-ip --ssh-user root --ssh-password yourpass \
-  --output report.pdf
+  -o report.pdf
+ 
+# Dry-run — see exactly what would change before applying
+stacksentry -t https://your-app.com --mode full --fix --dry-run \
+  --ssh-host your-server-ip --ssh-user root --ssh-password yourpass
  
 # Generate AI-powered fix scripts + auto-apply
-stacksentry --target https://your-app.com --mode full --patch --fix \
+stacksentry -t https://your-app.com --mode full --patch --fix \
   --ssh-host your-server-ip --ssh-user root --ssh-password yourpass \
   --dockerfile ./Dockerfile --compose-file ./docker-compose.yml
  
+# Use SSH key after StackSentry generates one
+stacksentry -t https://your-app.com --mode full --fix \
+  --ssh-host your-server-ip --ssh-user root \
+  --ssh-key ~/.stacksentry/keys/your-server_20260411.pem
+ 
 # Compare against last scan (posture drift)
-stacksentry --target https://your-app.com --compare-last
+stacksentry -t https://your-app.com --compare-last
+ 
+# Scan a PHP/shared hosting app
+stacksentry -t https://your-php-app.com/index.php --mode full
  
 # View full scan history
-stacksentry --target https://your-app.com --history
+stacksentry -t https://your-app.com --history
 ```
  
 ---
@@ -69,79 +97,133 @@ pip install stacksentry
  
 **From source:**
 ```bash
-git clone https://github.com/stacksentry/stacksentry
+git clone https://github.com/vickkykruz/stacksentry
 cd stacksentry
 pip install -e ".[dev]"
 ```
  
+**Optional — SSH auto-fix:**
+```bash
+pip install paramiko
+```
+ 
 **Optional — AI-powered patch generation:**
  
-Create a `.env` file in your project root:
-```
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+Set your Anthropic API key:
+```bash
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
  
-Without the key, StackSentry uses static patch templates. With it, patches are tailored to your specific stack by AI.
+Without the key, StackSentry uses static patch templates. With it, patches are tailored to your specific stack by Claude AI.
+ 
+---
+ 
+## SSH key safety
+ 
+When you run `--fix` with `--ssh-password` and `HOST-SSH-001` fails (PermitRootLogin is `yes`), StackSentry does not blindly apply `prohibit-password` and risk locking you out. Instead it runs a 4-step pre-flight:
+ 
+1. **Generates** an Ed25519 SSH key pair locally (RSA 4096 fallback for older paramiko)
+2. **Installs** the public key on the server via your existing password session
+3. **Verifies** that key login actually works before touching sshd
+4. **Only then** applies `PermitRootLogin prohibit-password` and restarts sshd
+ 
+Keys are saved to `~/.stacksentry/keys/` with OS-appropriate permissions (`chmod 600` on Linux/macOS, `icacls` on Windows). If key verification fails, the sshd config is never touched.
+ 
+Running with `--dry-run` shows the exact key paths and all 4 steps before anything is applied.
+ 
+---
+ 
+## Stack detection
+ 
+StackSentry automatically detects your application stack from HTTP response headers, cookies, and URL patterns — even when the server is unreachable:
+ 
+| Signal | Detection |
+|---|---|
+| `.php` in URL | PHP detected |
+| `X-Powered-By: PHP/8.x` | PHP + version |
+| `PHPSESSID` cookie | PHP session |
+| `Server: Apache` | Apache webserver |
+| `Server: nginx` | nginx webserver |
+| `csrftoken` / `sessionid` cookie | Django |
+| PHP + Apache, no VPS tells | Shared hosting |
+ 
+When PHP/shared hosting is detected:
+- Admin paths expand to include `/phpmyadmin`, `/pma`, `/cpanel`, `/administrator`
+- Patch templates output PHP (Laravel `@csrf`, vanilla PHP token generation, CodeIgniter config)
+- Infrastructure WARNs from missing SSH/Docker are excluded from scoring
  
 ---
  
 ## Auto-fix coverage
  
-StackSentry uses the context you provide to determine the best fix strategy for every check:
- 
 | Layer | Check | Auto-fix method |
 |---|---|---|
-| **HOST** | HOST-FW-001 — Firewall enabled | ✅ SSH (ufw enable) |
-| **HOST** | HOST-SSH-001 — SSH hardening | ✅ SSH (prohibit-password, MaxAuthTries) |
-| **HOST** | HOST-UPDATE-001 — Auto-updates | ✅ SSH (unattended-upgrades) |
-| **HOST** | HOST-PERM-001 — SSH file permissions | ✅ SSH (chmod) |
-| **HOST** | HOST-LOG-001 — Logging active | ✅ SSH (rsyslog) |
+| **HOST** | HOST-FW-001 — Firewall enabled | ✅ SSH (`ufw enable`) |
+| **HOST** | HOST-SSH-001 — SSH hardening | ✅ SSH (key generation + `prohibit-password`) |
+| **HOST** | HOST-UPDATE-001 — Auto-updates | ✅ SSH (`unattended-upgrades`) |
+| **HOST** | HOST-PERM-001 — SSH file permissions | ✅ SSH (`chmod`) |
+| **HOST** | HOST-LOG-001 — Logging active | ✅ SSH (`rsyslog`) |
 | **HOST** | HOST-SVC-001 — Minimal services | 📋 Manual guide |
 | **HOST** | HOST-SVC-GUNICORN/UWSGI/MYSQL/REDIS | 📋 Manual guide |
 | **WS** | WS-HSTS-001 — HSTS header | ✅ SSH or `--nginx-conf` |
 | **WS** | WS-SEC-001 — Security headers | ✅ SSH or `--nginx-conf` |
-| **WS** | WS-TLS-001 — TLS 1.2+ | ✅ SSH or `--nginx-conf` |
+| **WS** | WS-TLS-001 — TLS 1.2+ | ✅ SSH or `--nginx-conf` (Let's Encrypt aware) |
 | **WS** | WS-SRV-001 — Server token disclosure | ✅ SSH or `--nginx-conf` |
 | **WS** | WS-DIR-001 — Directory listing | ✅ SSH or `--nginx-conf` |
 | **WS** | WS-LIMIT-001 — Request size limits | ✅ SSH or `--nginx-conf` |
 | **WS** | WS-CONF-HSTS / WS-CONF-CSP | ✅ SSH or `--nginx-conf` |
 | **CONT** | CONT-USER-001 — Non-root user | ✅ `--dockerfile` |
 | **CONT** | CONT-CONF-HEALTH — HEALTHCHECK | ✅ `--dockerfile` |
-| **CONT** | CONT-REG-001 — Pinned base image | ✅ `--dockerfile` |
 | **CONT** | CONT-RES-001 / CONT-COMP-RES | ✅ `--compose-file` |
-| **CONT** | CONT-PORT-001 — Exposed ports | 📋 Port report + manual |
 | **CONT** | CONT-SEC-001 — Secrets in env | 📋 Manual guide |
-| **APP** | APP-DEBUG-001 — Debug mode | 📋 Flask/Django snippet |
-| **APP** | APP-COOKIE-001 — Secure cookies | 📋 Flask/Django snippet |
-| **APP** | APP-CSRF-001 — CSRF protection | 📋 Flask/Django snippet |
-| **APP** | APP-ADMIN-001 — Admin endpoints | 📋 Flask/Django snippet |
-| **APP** | APP-RATE-001 — Rate limiting | 📋 Flask/Django snippet |
-| **APP** | APP-PASS-001 — Password policy | 📋 Flask/Django snippet |
+| **APP** | APP-DEBUG-001 — Debug mode | 📋 Flask/Django/PHP snippet |
+| **APP** | APP-COOKIE-001 — Secure cookies | 📋 Flask/Django/PHP snippet |
+| **APP** | APP-CSRF-001 — CSRF protection | 📋 Flask/Django/Laravel/PHP snippet |
+| **APP** | APP-ADMIN-001 — Admin endpoints | 📋 Flask/Django/PHP snippet |
+| **APP** | APP-RATE-001 — Rate limiting | 📋 Flask/Django/nginx snippet |
+| **APP** | APP-PASS-001 — Password policy | 📋 Framework snippet |
  
 **Legend:**
-- ✅ **Fully automated** — StackSentry applies the fix and confirms
-- 📋 **Code snippet** — StackSentry prints the exact code to add (framework-detected)
+- ✅ **Fully automated** — StackSentry applies the fix, validates, and confirms
+- 📋 **Code snippet** — StackSentry detects your framework and prints the exact code to add
  
-Every automated fix creates a timestamped backup, validates before applying, and is idempotent.
+Every automated fix creates a timestamped backup, validates with `nginx -t` or `sshd -t` before applying, and is idempotent. If a fix fails validation, subsequent dependent fixes are skipped with a clear explanation rather than cascading silently.
  
 ---
  
-## What gets scanned
+## Dry-run — always preview before applying
  
-### 4-layer architecture
+Running `--fix --dry-run` shows the complete plan with every command that would run, without touching your server:
  
 ```
-Web Application  →  Nginx/Apache  →  Docker Container  →  Linux Host
-    (HTTP)           (Config)          (Dockerfile)         (SSH)
-```
+🔍 DRY-RUN — no changes will be made to the server or files.
  
-StackSentry runs 24+ checks across all four layers in a single command, with SSH access scanning the host layer in real time.
+  3 check(s) will be fixed automatically
+  6 check(s) require manual action (APP layer)
+ 
+📋 DRY-RUN PLAN — commands that WOULD run:
+ 
+  🔧 [WEBSERVER] WS-HSTS-001   Would run 5 SSH command(s) on 159.198.66.20
+         $ mkdir -p /etc/nginx/snippets
+         $ nginx -t
+         $ systemctl reload nginx
+ 
+  🔧 [HOST    ] HOST-SSH-001
+  ⚠️  PASSWORD → KEY MIGRATION REQUIRED
+  Step 1: Generate Ed25519 key pair → ~/.stacksentry/keys/server.pem
+  Step 2: Install public key on server
+  Step 3: Verify key login
+  Step 4: Apply PermitRootLogin prohibit-password
+ 
+  Would fix: 3  |  Manual: 6
+  ✅ Review complete. Run without --dry-run to apply.
+```
  
 ---
  
 ## Output formats
  
-### PDF report (`--output report.pdf`)
+### PDF report (`-o report.pdf`)
 Professional report including executive summary, attack surface heatmap, OWASP Top 5 mapping, prioritised hardening plan (Day 1/7/30), 30-day simulation roadmap, generated patches table, auto-fix results, security posture history, and server fingerprint.
  
 ### JSON (`--json results.json`)
@@ -149,10 +231,10 @@ Structured output for CI/CD pipelines. Includes all check results, scores, attac
  
 ### Patch files (`--patch`)
 Scripts written to `patches/{target}_{date}_scan{N}/`:
-- `.sh` shell scripts for host/server fixes (dry-run by default, `--apply` to apply)
-- `.py` Python scripts for app-layer guidance
+- `.sh` shell scripts for host/server fixes
+- `.py` Python scripts for Flask/Django app-layer guidance
+- `.php` PHP scripts for PHP/Laravel app-layer guidance
 - `.conf` nginx configuration snippets
-- `.dockerfile` Dockerfile patches
 - `README.md` with severity-sorted application order
 - `manifest.json` for machine-readable processing
  
@@ -161,7 +243,7 @@ Scripts written to `patches/{target}_{date}_scan{N}/`:
 ## CLI reference
  
 ```
-stacksentry --target URL [options]
+stacksentry -t URL [options]
  
 Core:
   --target, -t URL       Target web application URL
@@ -192,12 +274,16 @@ Patch generation:
  
 Auto-fix:
   --fix                  Auto-apply fixes using available context
+  --dry-run              Preview all fixes without applying (safe to run first)
  
 History:
   --compare-last         Show posture drift vs previous scan
   --history              Print scan history timeline and exit
   --no-save              Do not save this scan to history database
   --db-path PATH         Custom history database path
+ 
+Telemetry:
+  --telemetry on|off|status   Enable, disable, or check telemetry status
 ```
  
 ---
@@ -217,9 +303,11 @@ patches   = generator.generate_all(scan_result, output_dir="patches/")
  
 # Auto-fix with full context
 fixer = AutoFixer(
-    ssh_host="1.2.3.4", ssh_password="...",
+    ssh_host="1.2.3.4",
+    ssh_password="...",   # key will be generated automatically if needed
     dockerfile="./Dockerfile",
     compose_file="./docker-compose.yml",
+    dry_run=True,         # preview only
 )
 results = fixer.fix_all(scan_result)
  
@@ -235,20 +323,14 @@ report  = DriftEngine().compare(previous_scan, scan_result)
  
 ```
 stacksentry/
-├── sec_audit/          CLI, config, results, scoring, narratives
+├── sec_audit/          CLI, config, results, scoring, narratives, telemetry
 ├── checks/             24+ security check functions (4 layers)
 ├── scanners/           HTTP, SSH, Docker, Nginx, compose scanners
 ├── reporting/          PDF generator (ReportLab)
 ├── storage/            SQLite history, drift engine
 ├── remediation/        Patch generator, LLM integration, auto-fix engine
-└── tests/              316 tests, 0 failures
+└── tests/              321 tests, 0 failures
 ```
- 
----
- 
-## Adding custom checks
- 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide including check schema, template registration, and test requirements.
  
 ---
  
@@ -257,7 +339,22 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide including check schema
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
+# 321 passed in ~1.5s
 ```
+ 
+---
+ 
+## Telemetry
+ 
+StackSentry collects anonymous usage data (scan counts, check grades, platform) to help prioritise development. It is **opt-in only** — you are asked once on first run and can change your preference at any time:
+ 
+```bash
+stacksentry --telemetry status   # check current setting
+stacksentry --telemetry off      # disable
+stacksentry --telemetry on       # enable
+```
+ 
+No personally identifiable information is collected. No code, URLs, or scan results are ever sent.
  
 ---
  
@@ -266,8 +363,14 @@ pytest tests/ -v
 - [x] Phase 1 — 24+ checks, PDF/JSON reports, CLI
 - [x] Phase 2 — History, drift detection, posture tracking
 - [x] Phase 3 — AI-powered patch generation + auto-fix engine
-- [x] Phase 4 — PyPI package, GitHub release *(current)*
+- [x] Phase 4 — PyPI package, PHP/Apache support, SSH key safety, dry-run *(current)*
 - [ ] Phase 5 — SaaS dashboard, team accounts, CI/CD integrations, `--app-path` for application source code auto-fix
+ 
+---
+ 
+## Contributing
+ 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide including check schema, template registration, and test requirements.
  
 ---
  
